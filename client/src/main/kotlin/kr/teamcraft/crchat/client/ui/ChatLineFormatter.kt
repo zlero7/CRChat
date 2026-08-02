@@ -15,10 +15,20 @@ object ChatLineFormatter {
     fun format(message: ChatMessage): Text {
         val body = message.segments.filterIsInstance<Segment.Text>().joinToString("") { it.value }
         val color = message.segments.filterIsInstance<Segment.Text>().firstOrNull()?.color
-        val base = Text.literal("${ChatState.displayNameFor(message)}: $body")
+        // 공지는 발신자 표시 없이 내용만 보여준다 — 운영자 공지에 "[notice]:" 같은
+        // 접두를 붙이면 정식 공지처럼 안 보인다.
+        val plain = if (message.channel == "notice") body else "${ChatState.displayNameFor(message)}: $body"
+        val base = Text.literal(plain)
         val parsed = color?.let { hex ->
             runCatching { TextColor.fromRgb(hex.removePrefix("#").toInt(16)) }.getOrNull()
         }
         return parsed?.let { c -> base.styled { style -> style.withColor(c) } } ?: base
     }
+
+    /**
+     * 메시지 하나가 렌더 줄 몇 개가 되는지. 공지는 위아래 빈 줄로 감싸 눈에 띄게 한다
+     * (`null` = 빈 줄). 나머지는 한 줄 그대로.
+     */
+    fun expand(message: ChatMessage): List<Text?> =
+        if (message.channel == "notice") listOf(null, format(message), null) else listOf(format(message))
 }

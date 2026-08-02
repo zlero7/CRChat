@@ -31,17 +31,14 @@ public class ChatHudMixin {
         ci.cancel();
     }
 
-    @Inject(method = "addMessage(Lnet/minecraft/text/Text;)V", at = @At("HEAD"))
-    private void crchat_captureSimple(Text message, CallbackInfo ci) {
-        ChatState.INSTANCE.addVanillaMessage(message.getString());
-    }
-
+    // addMessage(Text) 는 내부적으로 이 3-arg 버전에 위임한다(바이트코드로 확인함) —
+    // 두 군데 다 후킹하면 같은 메시지가 두 번 잡힌다. 여기 하나만 있으면 양쪽 경로를 다 잡는다.
     @Inject(
             method = "addMessage(Lnet/minecraft/text/Text;"
                     + "Lnet/minecraft/network/message/MessageSignatureData;"
                     + "Lnet/minecraft/client/gui/hud/MessageIndicator;)V",
             at = @At("HEAD"))
-    private void crchat_captureSigned(
+    private void crchat_captureMessage(
             Text message, MessageSignatureData signature, MessageIndicator indicator, CallbackInfo ci) {
         ChatState.INSTANCE.addVanillaMessage(message.getString());
     }

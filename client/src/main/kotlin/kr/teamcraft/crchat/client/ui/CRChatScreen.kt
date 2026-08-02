@@ -120,29 +120,38 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
     private fun filterChannelId(panel: OverlayPanel): String? =
         if (panel === ChatOverlayState.main) activeTab.channelId else panel.tab?.channelId
 
-    private fun renderMessages(context: DrawContext, panel: OverlayPanel) {
+    /** 메시지가 아니라 **렌더 줄** 목록. 공지는 메시지 하나가 3줄(빈 줄 포함)이 된다. */
+    private fun visibleLines(panel: OverlayPanel): List<Text?> {
         val channelId = filterChannelId(panel)
-        val filtered = ChatState.messages.filter { channelId == null || it.channel == channelId }
+        return ChatState.messages
+            .filter { channelId == null || it.channel == channelId }
+            .flatMap { ChatLineFormatter.expand(it) }
+    }
+
+    private fun renderMessages(context: DrawContext, panel: OverlayPanel) {
+        val lines = visibleLines(panel)
         val maxLines = (panel.height - tabBarHeight) / lineHeight
-        val maxScroll = (filtered.size - maxLines).coerceAtLeast(0)
+        val maxScroll = (lines.size - maxLines).coerceAtLeast(0)
         panel.scrollOffset = panel.scrollOffset.coerceIn(0, maxScroll)
 
-        val endExclusive = filtered.size - panel.scrollOffset
+        val endExclusive = lines.size - panel.scrollOffset
         val startIndex = (endExclusive - maxLines).coerceAtLeast(0)
-        val visible = filtered.subList(startIndex, endExclusive.coerceAtLeast(startIndex))
+        val visible = lines.subList(startIndex, endExclusive.coerceAtLeast(startIndex))
 
         var y = panel.y + panel.height - lineHeight
-        for (message in visible.asReversed()) {
-            context.drawTextWithShadow(textRenderer, ChatLineFormatter.format(message), panel.x + 4, y, 0xFFFFFF)
+        for (line in visible.asReversed()) {
+            if (line != null) {
+                context.drawTextWithShadow(textRenderer, line, panel.x + 4, y, 0xFFFFFF)
+            }
             y -= lineHeight
             if (y < panel.y + tabBarHeight) break
         }
 
-        if (filtered.size > maxLines) {
+        if (lines.size > maxLines) {
             val trackTop = panel.y + tabBarHeight
             val trackHeight = panel.height - tabBarHeight
             val barX = panel.x + panel.width - 3
-            val thumbHeight = (trackHeight * maxLines / filtered.size).coerceAtLeast(6)
+            val thumbHeight = (trackHeight * maxLines / lines.size).coerceAtLeast(6)
             val thumbY = trackTop + (trackHeight - thumbHeight) * (maxScroll - panel.scrollOffset) / maxScroll.coerceAtLeast(1)
             context.fill(barX, trackTop, barX + 2, trackTop + trackHeight, 0x33FFFFFF)
             context.fill(barX, thumbY, barX + 2, thumbY + thumbHeight, 0xCCFFFFFF.toInt())
@@ -152,10 +161,9 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
     override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
         for (panel in ChatOverlayState.panels) {
             if (mouseX >= panel.x && mouseX <= panel.x + panel.width && mouseY >= panel.y && mouseY <= panel.y + panel.height) {
-                val channelId = filterChannelId(panel)
-                val filtered = ChatState.messages.count { channelId == null || it.channel == channelId }
+                val lineCount = visibleLines(panel).size
                 val maxLines = (panel.height - tabBarHeight) / lineHeight
-                val maxScroll = (filtered - maxLines).coerceAtLeast(0)
+                val maxScroll = (lineCount - maxLines).coerceAtLeast(0)
                 panel.scrollOffset = (panel.scrollOffset + verticalAmount.toInt()).coerceIn(0, maxScroll)
                 return true
             }
@@ -274,8 +282,7 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
             if (text.startsWith("/")) {
                 MinecraftClient.getInstance().player?.networkHandler?.sendChatCommand(text.removePrefix("/"))
             } else {
-                val channel = activeTab.sendChannelId
-                if (channel != null) CRChatNetworking.send(channel, text)
+                CRChatNetworking.send(activeTab.sendChannelId, text)
             }
         }
         close()

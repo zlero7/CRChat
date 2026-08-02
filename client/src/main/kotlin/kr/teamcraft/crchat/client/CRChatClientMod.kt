@@ -1,5 +1,6 @@
 package kr.teamcraft.crchat.client
 
+import kr.teamcraft.crchat.client.mixin.ChatScreenAccessor
 import kr.teamcraft.crchat.client.network.CRChatNetworking
 import kr.teamcraft.crchat.client.ui.ChatOverlayRenderer
 import kr.teamcraft.crchat.client.ui.CRChatScreen
@@ -35,21 +36,15 @@ class CRChatClientMod : ClientModInitializer {
 
         ScreenEvents.AFTER_INIT.register { client, screen, _, _ ->
             if (screen is ChatScreen) {
-                client.setScreen(CRChatScreen(readPrefill(screen)))
+                // `/` 로 채팅을 열면 바닐라가 "/" 를 미리 채워서 만든다 — 그 값을 이어받는다.
+                // 리플렉션으로 필드 이름("originalChatText")을 직접 읽으면 실제 게임(중간
+                // 매핑)에서는 그 이름이 없어 조용히 실패한다. Mixin Accessor 는 빌드 시점에
+                // 정확히 리매핑되므로 이 방식을 쓴다.
+                val prefill = (screen as ChatScreenAccessor).crchat_getOriginalChatText()
+                client.setScreen(CRChatScreen(prefill))
             }
         }
 
         logger.info("CRChat 클라이언트 초기화 (protocol v{})", PROTOCOL_VERSION)
     }
-
-    /**
-     * `/` 로 채팅을 열면 바닐라는 `ChatScreen(String)` 생성자에 "/" 를 미리 채워서 만든다.
-     * 그 필드(`originalChatText`)가 private 라 getter 가 없어서 리플렉션으로 읽는다 —
-     * 이 정도 읽기 전용 접근에 믹스인까지는 과하다.
-     */
-    private fun readPrefill(screen: ChatScreen): String = runCatching {
-        val field = ChatScreen::class.java.getDeclaredField("originalChatText")
-        field.isAccessible = true
-        field.get(screen) as? String
-    }.getOrNull().orEmpty()
 }

@@ -4,7 +4,8 @@
   "package": "kr.teamcraft.crchat.client.mixin",
   "compatibilityLevel": "JAVA_21",
   "client": [
-    "ChatHudMixin"
+    "ChatHudMixin",
+    "ChatScreenAccessor"
   ],
   "injectors": {
     "defaultRequire": 1

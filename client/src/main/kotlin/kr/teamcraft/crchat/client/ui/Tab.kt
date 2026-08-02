@@ -13,11 +13,13 @@ enum class Tab(val channelId: String?, val label: String) {
     PARTY("party", "파티"),
     SYSTEM("system", "시스템");
 
-    /** null 이면 이 탭에서는 발신할 수 없다 (수신 전용 탭). */
-    val sendChannelId: String?
+    /**
+     * 전체·공지·시스템은 자기 채널이 없다(전체는 집계 뷰, 공지·시스템은 수신 전용) —
+     * 이 탭들에서 타이핑하면 "일반"으로 보낸다.
+     */
+    val sendChannelId: String
         get() = when (this) {
-            ALL -> "global"
-            NOTICE, SYSTEM -> null
-            else -> channelId
+            ALL, NOTICE, SYSTEM -> "general"
+            else -> channelId ?: "general"
         }
 }

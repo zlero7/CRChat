@@ -5,9 +5,9 @@ import kr.teamcraft.crchat.client.ui.ChatOverlayRenderer
 import kr.teamcraft.crchat.client.ui.CRChatScreen
 import kr.teamcraft.crchat.protocol.PROTOCOL_VERSION
 import net.fabricmc.api.ClientModInitializer
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents
-import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.screen.ChatScreen
 import net.minecraft.network.message.ChatVisibility
 import org.slf4j.LoggerFactory
@@ -29,10 +29,14 @@ class CRChatClientMod : ClientModInitializer {
     override fun onInitializeClient() {
         CRChatNetworking.register()
 
-        // 바닐라 ChatHud(접속 알림·명령어 피드백 등)가 우리 오버레이 뒤에 겹쳐 보이는 걸
-        // 막는다. 대신 그 메시지들은 지금 당장은 어디에도 안 뜬다 — 바닐라 메시지를
-        // 우리 오버레이로 끌어오는 건(4.7) ChatHud.addMessage 가로채기가 필요한 다음 단계다.
-        MinecraftClient.getInstance().options.chatVisibility.value = ChatVisibility.HIDDEN
+        // `onInitializeClient()` 시점엔 `MinecraftClient.options` 가 아직 null 이다
+        // (실제로 NPE 로 크래시했다). GameOptions 가 준비된 뒤(CLIENT_STARTED)로 미룬다.
+        ClientLifecycleEvents.CLIENT_STARTED.register { client ->
+            // 바닐라 ChatHud(접속 알림·명령어 피드백 등)가 우리 오버레이 뒤에 겹쳐 보이는 걸
+            // 막는다. 대신 그 메시지들은 지금 당장은 어디에도 안 뜬다 — 바닐라 메시지를
+            // 우리 오버레이로 끌어오는 건(4.7) ChatHud.addMessage 가로채기가 필요한 다음 단계다.
+            client.options.chatVisibility.value = ChatVisibility.HIDDEN
+        }
 
         HudRenderCallback.EVENT.register { context, _ -> ChatOverlayRenderer.render(context) }
 

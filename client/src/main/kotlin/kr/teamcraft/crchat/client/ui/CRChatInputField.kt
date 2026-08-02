@@ -18,8 +18,11 @@ import org.lwjgl.glfw.GLFW
  * 키·문자 이벤트를 직접 여기로 넘겨준다.
  *
  * 커서 이동·드래그 선택은 아직 없다 — 지금은 끝에서만 입력·삭제되는 1차 버전이다.
- * 한/영 전환 키는 우측 Ctrl(여기서 직접 처리) + 실제 한/영 키(KeyBinding 폴링으로
- * [toggleHangulMode] 를 통해 처리, [kr.teamcraft.crchat.client.CRChatClientMod] 참조).
+ *
+ * 한/영 전환 키는 **우측 Ctrl 뿐**이다. 실제 물리 한/영 키는 일부러 안 잡는다 —
+ * 그 키는 Windows 자체의 IME 를 통째로 전환하는 시스템 키라, 눌리는 순간부터
+ * 타이핑이 OS 한글 입력기를 거쳐 넘어오고 우리 조합기는 그걸 이중 입력으로
+ * 보고 버린다(A.9) — "OS 전환은 되는데 채팅이 안 쳐지는" 증상의 원인이었다.
  */
 class CRChatInputField(
     private val textRenderer: TextRenderer,
@@ -73,14 +76,7 @@ class CRChatInputField(
         composer.reset()
     }
 
-    /**
-     * `Screen.keyPressed` 가로채기로는 한/영 키를 도저히 못 잡아서(WORLD_1/2, 스캔코드
-     * 다 시도했지만 실사용에서 안 됨) [kr.teamcraft.crchat.client.CRChatClientMod] 가
-     * 등록한 `KeyBinding` 을 매 틱 폴링해서 여기로 직접 부른다. `KeyBinding.wasPressed()`
-     * 는 Minecraft 가 화면 포커스와 무관하게 자체적으로 추적하는 키 상태를 읽는 거라
-     * 화면 레벨 이벤트 가로채기보다 훨씬 안정적이다.
-     */
-    fun toggleHangulMode() {
+    private fun toggleHangulMode() {
         flush()
         hangulMode = !hangulMode
     }
@@ -131,11 +127,7 @@ class CRChatInputField(
                 return true
             }
 
-            // 우측 Ctrl — 실사용에서 확인된 백업 토글키. 실제 한/영 키는 이 화면 레벨
-            // 가로채기로 WORLD_1/2·스캔코드까지 시도해봤지만 못 잡았다 — 그건
-            // KeyBindingHelper + 매 틱 폴링으로 [toggleHangulMode] 를 통해 처리한다
-            // (CRChatClientMod 참조). 그 방식은 Minecraft 자체 키 상태 추적을 쓰기 때문에
-            // 화면이 이 이벤트를 실제로 받는지와 무관하게 동작한다.
+            // 유일한 한/영 전환 키. 클래스 문서 참조 — 물리 한/영 키는 일부러 안 잡는다.
             GLFW.GLFW_KEY_RIGHT_CONTROL -> {
                 toggleHangulMode()
                 return true

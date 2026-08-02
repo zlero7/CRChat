@@ -2,18 +2,14 @@ package kr.teamcraft.crchat.client
 
 import kr.teamcraft.crchat.client.mixin.ChatScreenAccessor
 import kr.teamcraft.crchat.client.network.CRChatNetworking
+import kr.teamcraft.crchat.client.state.ChatState
 import kr.teamcraft.crchat.client.ui.ChatOverlayRenderer
 import kr.teamcraft.crchat.client.ui.CRChatScreen
 import kr.teamcraft.crchat.protocol.PROTOCOL_VERSION
 import net.fabricmc.api.ClientModInitializer
-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents
 import net.minecraft.client.gui.screen.ChatScreen
-import net.minecraft.client.option.KeyBinding
-import net.minecraft.client.util.InputUtil
-import org.lwjgl.glfw.GLFW
 import org.slf4j.LoggerFactory
 
 /**
@@ -29,6 +25,14 @@ import org.slf4j.LoggerFactory
  * 바닐라 채팅 렌더 자체를 지우는 건 `options.chatVisibility` 를 건드리는 방식으로
  * 시도했다가 뺐다 — 그 설정은 클라가 채팅 전송 자체를 막아버리는 부작용이 있었다.
  * 지금은 [kr.teamcraft.crchat.client.mixin.ChatHudMixin] 이 렌더만 정확히 지운다.
+ *
+ * **실제 물리 한/영 키를 잡으려는 시도(WORLD_1/2, 스캔코드, KeyBinding 폴링)는 전부
+ * 포기했다.** 그 키는 애초에 우리 모드가 아니라 **Windows 자체의 IME 를 통째로
+ * 전환**하는 시스템 키다 — OS 가 한글 IME 로 바뀌면 그 뒤 타이핑은 OS 가 먼저 완성된
+ * 한글로 조합해서 넘기는데, 우리 조합기는 그걸 이중 입력으로 보고 버린다(A.9) —
+ * 그래서 "OS 전환은 되는데 채팅은 안 쳐지는" 증상이 났다. 해결책은 그 키를 쫓는 게
+ * 아니라 **OS IME 는 항상 영문으로 두게 안내**하고, 우리 안의 전환은 우측 Ctrl 로만
+ * 하는 것이다 (부록 A.9 가 원래 이렇게 하라고 되어 있었다).
  */
 class CRChatClientMod : ClientModInitializer {
 
@@ -50,23 +54,9 @@ class CRChatClientMod : ClientModInitializer {
             }
         }
 
-        // 한/영 전환. `Screen.keyPressed` 가로채기로는 실제 한/영 키를 못 잡았다
-        // (WORLD_1/2, 스캔코드까지 시도했지만 실사용에서 안 됨) — `KeyBinding` 은
-        // Minecraft 가 화면 포커스와 무관하게 자체적으로 추적하는 키 상태를 읽어서
-        // 훨씬 안정적이다. 기본키는 우측 Alt — 컨트롤 설정 메뉴에서 유저가 바꿀 수 있다.
-        val hangulToggleKey = KeyBindingHelper.registerKeyBinding(
-            KeyBinding(
-                "key.crchat.toggle_hangul",
-                InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_RIGHT_ALT,
-                "category.crchat",
-            ),
-        )
-        ClientTickEvents.END_CLIENT_TICK.register { client ->
-            while (hangulToggleKey.wasPressed()) {
-                (client.currentScreen as? CRChatScreen)?.toggleHangulMode()
-            }
-        }
+        // 최초 1회 안내 (부록 A.9) — 물리 한/영 키를 누르면 OS IME 가 켜져서 이중 입력이
+        // 난다. 켜기 전에 미리 알려준다.
+        ChatState.addVanillaMessage("한/영 전환은 우측 Ctrl 을 쓰세요. OS 입력기(한/영 키)를 켜면 한글이 이중으로 조합됩니다.")
 
         logger.info("CRChat 클라이언트 초기화 (protocol v{})", PROTOCOL_VERSION)
     }

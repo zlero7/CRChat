@@ -5,7 +5,6 @@ import kr.teamcraft.crchat.common.hangul.HangulComposer
 import net.minecraft.client.font.TextRenderer
 import net.minecraft.client.gui.DrawContext
 import org.lwjgl.glfw.GLFW
-import org.slf4j.LoggerFactory
 
 /**
  * 자체 두벌식 조합기를 쓰는 채팅 입력창. (기획서 부록 A)
@@ -30,7 +29,6 @@ class CRChatInputField(
 ) {
     private val composer = HangulComposer()
     private val buffer = StringBuilder()
-    private val logger = LoggerFactory.getLogger("CRChat/Input")
 
     /**
      * 한/영 전환 상태. 기본은 한글 모드.
@@ -45,6 +43,21 @@ class CRChatInputField(
     private var suppressNextChar = false
 
     private val maxLength = 256
+
+    /**
+     * Shift/Ctrl/Alt 등 순수 보조키 자체도 하나의 keyCode 이벤트로 들어온다.
+     * "Shift+R" 은 물리적으로 Shift keydown -> R keydown 순서로 두 번 온다 —
+     * 이걸 "자모가 아닌 키"로 취급해 flush() 해버리면 Shift 를 누르는 순간
+     * 조합 중이던 글자가 조로 확정돼 버려서, 뒤이은 R 이 새 글자로 시작돼
+     * "ㄲ" 을 받침으로 못 붙인다. 실제로 이 버그가 있었다 — 보조키는 조용히 흘려보낸다.
+     */
+    private val MODIFIER_KEYS = setOf(
+        GLFW.GLFW_KEY_LEFT_SHIFT, GLFW.GLFW_KEY_RIGHT_SHIFT,
+        GLFW.GLFW_KEY_LEFT_CONTROL, GLFW.GLFW_KEY_RIGHT_CONTROL,
+        GLFW.GLFW_KEY_LEFT_ALT, GLFW.GLFW_KEY_RIGHT_ALT,
+        GLFW.GLFW_KEY_LEFT_SUPER, GLFW.GLFW_KEY_RIGHT_SUPER,
+        GLFW.GLFW_KEY_CAPS_LOCK,
+    )
 
     /** 조합 중인 글자까지 포함한 현재 표시 텍스트. */
     var text: String
@@ -104,15 +117,16 @@ class CRChatInputField(
             GLFW.GLFW_KEY_RIGHT_CONTROL -> {
                 flush()
                 hangulMode = !hangulMode
-                logger.info("한/영 전환 -> {}", if (hangulMode) "한글" else "영문")
                 return true
             }
         }
 
+        // 보조키 자체의 keydown 은 조용히 흘려보낸다 — 조합 상태를 건드리면 안 된다.
+        if (keyCode in MODIFIER_KEYS) return false
+
         if (hangulMode) {
             val shift = (modifiers and GLFW.GLFW_MOD_SHIFT) != 0
             val jamo = Dubeolsik.jamoFor(keyCode, shift)
-            logger.info("keyCode={} modifiers={} shift={} -> jamo={}", keyCode, modifiers, shift, jamo)
             if (jamo != null) {
                 composer.input(jamo)?.let { appendToBuffer(it) }
                 suppressNextChar = true

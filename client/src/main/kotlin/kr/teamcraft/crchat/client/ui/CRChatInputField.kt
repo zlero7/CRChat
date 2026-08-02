@@ -127,8 +127,11 @@ class CRChatInputField(
                 return true
             }
 
-            // 유일한 한/영 전환 키. 클래스 문서 참조 — 물리 한/영 키는 일부러 안 잡는다.
-            GLFW.GLFW_KEY_RIGHT_CONTROL -> {
+            // 한/영 전환 키. 우측 Ctrl 은 검증됨. 우측 Alt 도 같은 방식(화면
+            // keyPressed 직접 비교)으로 다시 시도한다 — "AltGr 문제" 는 테스트 없이
+            // 넘겨짚은 것이었다. 실제 물리 한/영 키(라벨 있는 키)는 일부러 안 잡는다,
+            // 클래스 문서 참조.
+            GLFW.GLFW_KEY_RIGHT_CONTROL, GLFW.GLFW_KEY_RIGHT_ALT -> {
                 toggleHangulMode()
                 return true
             }

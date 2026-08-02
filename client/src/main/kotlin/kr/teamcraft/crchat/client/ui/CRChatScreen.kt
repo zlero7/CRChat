@@ -18,7 +18,7 @@ import org.lwjgl.glfw.GLFW
  * 평소 표시는 [ChatOverlayRenderer] 가 대신한다. 이 화면은 탭 전환·타이핑·
  * 크기 조절·이동·스크롤·채널 분리(우클릭)를 할 때만 뜬다.
  */
-class CRChatScreen : Screen(Text.literal("CRChat")) {
+class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("CRChat")) {
 
     private var activeTab: Tab = Tab.ALL
     private lateinit var input: TextFieldWidget
@@ -46,6 +46,7 @@ class CRChatScreen : Screen(Text.literal("CRChat")) {
         val main = ChatOverlayState.main
         input = TextFieldWidget(textRenderer, main.x, main.y + main.height + 4, main.width, 20, Text.literal(""))
         input.setMaxLength(256)
+        input.text = initialText
         addDrawableChild(input)
         setInitialFocus(input)
     }
@@ -111,8 +112,17 @@ class CRChatScreen : Screen(Text.literal("CRChat")) {
         context.fill(x2 - 2, y1, x2, y1 + handleSize, 0xCCFFFFFF.toInt())
     }
 
+    /**
+     * 메인 패널은 `panel.tab` 이 항상 null(전체 패널이라는 표식)이라 [activeTab] 을 따로
+     * 봐야 한다 — 이걸 빼먹으면 탭을 눌러도 필터가 안 걸린다(실제로 이 버그가 있었다).
+     * 분리된 패널은 고정 채널이라 자기 `tab` 을 그대로 쓴다.
+     */
+    private fun filterChannelId(panel: OverlayPanel): String? =
+        if (panel === ChatOverlayState.main) activeTab.channelId else panel.tab?.channelId
+
     private fun renderMessages(context: DrawContext, panel: OverlayPanel) {
-        val filtered = ChatState.messages.filter { panel.tab == null || it.channel == panel.tab.channelId }
+        val channelId = filterChannelId(panel)
+        val filtered = ChatState.messages.filter { channelId == null || it.channel == channelId }
         val maxLines = (panel.height - tabBarHeight) / lineHeight
         val maxScroll = (filtered.size - maxLines).coerceAtLeast(0)
         panel.scrollOffset = panel.scrollOffset.coerceIn(0, maxScroll)
@@ -142,7 +152,8 @@ class CRChatScreen : Screen(Text.literal("CRChat")) {
     override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
         for (panel in ChatOverlayState.panels) {
             if (mouseX >= panel.x && mouseX <= panel.x + panel.width && mouseY >= panel.y && mouseY <= panel.y + panel.height) {
-                val filtered = ChatState.messages.count { panel.tab == null || it.channel == panel.tab.channelId }
+                val channelId = filterChannelId(panel)
+                val filtered = ChatState.messages.count { channelId == null || it.channel == channelId }
                 val maxLines = (panel.height - tabBarHeight) / lineHeight
                 val maxScroll = (filtered - maxLines).coerceAtLeast(0)
                 panel.scrollOffset = (panel.scrollOffset + verticalAmount.toInt()).coerceIn(0, maxScroll)
@@ -167,7 +178,12 @@ class CRChatScreen : Screen(Text.literal("CRChat")) {
             for (tab in Tab.entries) {
                 val width = textRenderer.getWidth(tab.label)
                 if (mouseX >= x && mouseX <= x + width) {
-                    if (button == 1) ChatOverlayState.detach(tab) else activeTab = tab
+                    if (button == 1) {
+                        ChatOverlayState.detach(tab)
+                    } else {
+                        activeTab = tab
+                        main.scrollOffset = 0
+                    }
                     return true
                 }
                 x += width + 12

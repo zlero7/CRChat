@@ -10,6 +10,9 @@
       "kr.teamcraft.crchat.client.CRChatClientMod"
     ]
   },
+  "mixins": [
+    "crchat.mixins.json"
+  ],
   "depends": {
     "fabricloader": ">=0.19.0",
     "minecraft": "1.21.4",

@@ -5,6 +5,7 @@ import kr.teamcraft.crchat.common.hangul.HangulComposer
 import net.minecraft.client.font.TextRenderer
 import net.minecraft.client.gui.DrawContext
 import org.lwjgl.glfw.GLFW
+import org.slf4j.LoggerFactory
 
 /**
  * 자체 두벌식 조합기를 쓰는 채팅 입력창. (기획서 부록 A)
@@ -33,6 +34,7 @@ class CRChatInputField(
 ) {
     private val composer = HangulComposer()
     private val buffer = StringBuilder()
+    private val logger = LoggerFactory.getLogger("CRChat/Input")
 
     /** 한/영 전환 상태. 기본은 한글 모드. */
     private var hangulMode = true
@@ -118,6 +120,9 @@ class CRChatInputField(
 
     /** @return 이 키를 소비했으면 true. false 면 [CRChatScreen] 이 다른 처리(ESC 등)로 넘겨야 한다. */
     fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
+        // 진단용. Alt 를 눌렀을 때 이 화면까지 뭐가(혹은 아무것도 안) 오는지 확인한다.
+        logger.info("keyPressed keyCode={} scanCode={} modifiers={}", keyCode, scanCode, modifiers)
+
         when (keyCode) {
             GLFW.GLFW_KEY_BACKSPACE -> {
                 if (!composer.backspace() && buffer.isNotEmpty()) {

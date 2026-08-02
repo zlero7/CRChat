@@ -5,6 +5,7 @@ import kr.teamcraft.crchat.common.hangul.HangulComposer
 import net.minecraft.client.font.TextRenderer
 import net.minecraft.client.gui.DrawContext
 import org.lwjgl.glfw.GLFW
+import org.slf4j.LoggerFactory
 
 /**
  * 자체 두벌식 조합기를 쓰는 채팅 입력창. (기획서 부록 A)
@@ -18,6 +19,7 @@ import org.lwjgl.glfw.GLFW
  * 키·문자 이벤트를 직접 여기로 넘겨준다.
  *
  * 커서 이동·드래그 선택은 아직 없다 — 지금은 끝에서만 입력·삭제되는 1차 버전이다.
+ * 한/영 전환 키는 우측 Ctrl (원래 계획은 우측 Alt 였으나 실사용에서 안 먹혀 교체, 아래 참조).
  */
 class CRChatInputField(
     private val textRenderer: TextRenderer,
@@ -28,8 +30,15 @@ class CRChatInputField(
 ) {
     private val composer = HangulComposer()
     private val buffer = StringBuilder()
+    private val logger = LoggerFactory.getLogger("CRChat/Input")
 
-    /** 한/영 전환 상태. 기본은 한글 모드. 우측 Alt 로 전환한다 (A.7). */
+    /**
+     * 한/영 전환 상태. 기본은 한글 모드.
+     *
+     * 우측 Alt(AltGr) 는 Windows 에서 내부적으로 가짜 좌측 Ctrl 이벤트를 같이
+     * 보내는 걸로 알려져 있어(자판 종류에 따라 GLFW 가 이걸 못 걸러낼 수 있다)
+     * 우측 Ctrl 로 바꿨다.
+     */
     private var hangulMode = true
 
     /** keyPressed 에서 자모로 이미 처리한 키가 곧이어 들어올 charTyped 를 오염시키지 않게 막는 플래그. */
@@ -92,9 +101,10 @@ class CRChatInputField(
                 return true
             }
 
-            GLFW.GLFW_KEY_RIGHT_ALT -> {
+            GLFW.GLFW_KEY_RIGHT_CONTROL -> {
                 flush()
                 hangulMode = !hangulMode
+                logger.info("한/영 전환 -> {}", if (hangulMode) "한글" else "영문")
                 return true
             }
         }
@@ -102,6 +112,7 @@ class CRChatInputField(
         if (hangulMode) {
             val shift = (modifiers and GLFW.GLFW_MOD_SHIFT) != 0
             val jamo = Dubeolsik.jamoFor(keyCode, shift)
+            logger.info("keyCode={} modifiers={} shift={} -> jamo={}", keyCode, modifiers, shift, jamo)
             if (jamo != null) {
                 composer.input(jamo)?.let { appendToBuffer(it) }
                 suppressNextChar = true

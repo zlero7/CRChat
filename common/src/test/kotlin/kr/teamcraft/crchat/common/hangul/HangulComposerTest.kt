@@ -42,6 +42,23 @@ class HangulComposerTest {
         assertEquals("까", HangulComposer().typeAll("Rk"))
     }
 
+    @Test
+    fun `쌍자음 ㄲ 이 받침으로 쓰인다 - 밖`() {
+        // q(ㅂ) k(ㅏ) R-shift(ㄲ)
+        assertEquals("밖", HangulComposer().typeAll("qkR"))
+    }
+
+    @Test
+    fun `쌍자음 ㅆ 이 받침으로 쓰인다 - 있`() {
+        // d(ㅇ) l(ㅣ) T-shift(ㅆ)
+        assertEquals("있", HangulComposer().typeAll("dlT"))
+    }
+
+    @Test
+    fun `쌍자음 ㅆ 받침 뒤 새 글자 - 있다`() {
+        assertEquals("있다", HangulComposer().typeAll("dlTek"))
+    }
+
     // ── 겹모음 · 겹받침 ────────────────────────────────────
 
     @Test

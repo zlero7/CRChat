@@ -79,11 +79,21 @@ class CRChatInputField(
     }
 
     fun render(context: DrawContext, textColor: Int) {
+        // 배경 + 테두리 — 이게 없으면 게임 화면과 안 구분돼서 입력창처럼 안 보인다.
+        context.fill(x, y, x + width, y + height, 0xEE101018.toInt())
+        context.fill(x, y, x + width, y + 1, 0x77FFFFFF.toInt()) // 위
+        context.fill(x, y + height - 1, x + width, y + height, 0x77FFFFFF.toInt()) // 아래
+        context.fill(x, y, x + 1, y + height, 0x77FFFFFF.toInt()) // 왼쪽
+        context.fill(x + width - 1, y, x + width, y + height, 0x77FFFFFF.toInt()) // 오른쪽
+
         val indicator = if (hangulMode) "한" else "EN"
         val indicatorX = x + 3
         TextRenderUtil.drawScaled(context, textRenderer, net.minecraft.text.Text.literal(indicator), indicatorX, y + 3, 0x88FF88)
 
-        val textX = x + 20
+        // 한/영 표시와 실제 입력 사이 구분선
+        context.fill(x + 17, y + 2, x + 18, y + height - 2, 0x44FFFFFF.toInt())
+
+        val textX = x + 21
         val display = text
         TextRenderUtil.drawScaled(context, textRenderer, net.minecraft.text.Text.literal(display), textX, y + 3, textColor)
 

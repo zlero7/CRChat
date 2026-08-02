@@ -26,6 +26,9 @@ object ChatOverlayState {
     val main: OverlayPanel = OverlayPanel(tab = null, x = 4, y = 4, width = 300, height = 90)
     val panels: MutableList<OverlayPanel> = mutableListOf(main)
 
+    /** 메인 패널에서 지금 보고 있는 탭. 화면을 닫았다 열어도 유지된다 — [kr.teamcraft.crchat.client.ui.CRChatScreen] 은 이 값을 직접 읽고 쓴다. */
+    var activeTab: Tab = Tab.ALL
+
     private var positioned = false
 
     /** 화면 크기를 아직 모르는 시점(오브젝트 초기화)엔 기본 위치를 못 잡으므로, 처음 렌더될 때 한 번만 맞춘다. */

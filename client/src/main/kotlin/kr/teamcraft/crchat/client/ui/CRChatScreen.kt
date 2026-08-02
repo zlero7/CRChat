@@ -17,15 +17,18 @@ import org.lwjgl.glfw.GLFW
  *
  * 평소 표시는 [ChatOverlayRenderer] 가 대신한다. 이 화면은 탭 전환·타이핑·
  * 크기 조절·이동·스크롤·채널 분리(우클릭)를 할 때만 뜬다.
+ *
+ * 지금 보고 있는 탭([ChatOverlayState.activeTab])은 이 화면 인스턴스가 아니라
+ * 전역 상태에 있다 — 화면을 닫았다 다시 열어도 마지막으로 본 탭이 유지되어야 하기 때문이다.
  */
 class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("CRChat")) {
 
-    private var activeTab: Tab = Tab.ALL
     private lateinit var input: TextFieldWidget
 
-    private val tabBarHeight = 16
-    private val lineHeight = 10
+    private val tabBarHeight = ChatUiScale.TAB_BAR_HEIGHT
+    private val lineHeight = ChatUiScale.LINE_HEIGHT
     private val handleSize = 8
+    private val inputHeight = 14
 
     private enum class DragMode { MOVE, RESIZE }
 
@@ -44,7 +47,7 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
         for (panel in ChatOverlayState.panels) panel.scrollOffset = 0
 
         val main = ChatOverlayState.main
-        input = TextFieldWidget(textRenderer, main.x, main.y + main.height + 4, main.width, 20, Text.literal(""))
+        input = TextFieldWidget(textRenderer, main.x, main.y + main.height + 4, main.width, inputHeight, Text.literal(""))
         input.setMaxLength(256)
         input.text = initialText
         addDrawableChild(input)
@@ -78,8 +81,8 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
         if (isMain) {
             renderTabs(context, panel, mouseX, mouseY)
         } else {
-            context.drawTextWithShadow(textRenderer, panel.tab?.label ?: "?", panel.x + 4, panel.y + 4, 0xFFFFFF)
-            context.drawTextWithShadow(textRenderer, "x", panel.x + panel.width - 10, panel.y + 4, 0xFF8080)
+            TextRenderUtil.drawScaled(context, textRenderer, Text.literal(panel.tab?.label ?: "?"), panel.x + 4, panel.y + 3, 0xFFFFFF)
+            TextRenderUtil.drawScaled(context, textRenderer, Text.literal("x"), panel.x + panel.width - 10, panel.y + 3, 0xFF8080)
         }
 
         renderMessages(context, panel)
@@ -89,18 +92,18 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
     private fun renderTabs(context: DrawContext, panel: OverlayPanel, mouseX: Int, mouseY: Int) {
         var x = panel.x + 4
         for (tab in Tab.entries) {
-            val width = textRenderer.getWidth(tab.label)
+            val width = TextRenderUtil.scaledWidth(textRenderer, tab.label)
             val hovered = mouseX in x..(x + width) && mouseY in panel.y..(panel.y + tabBarHeight)
             val color = when {
-                tab == activeTab -> 0xFFFFFF
+                tab == ChatOverlayState.activeTab -> 0xFFFFFF
                 hovered -> 0xAAAAAA
                 else -> 0x808080
             }
-            context.drawTextWithShadow(textRenderer, tab.label, x, panel.y + 4, color)
-            if (tab == activeTab) {
+            TextRenderUtil.drawScaled(context, textRenderer, Text.literal(tab.label), x, panel.y + 3, color)
+            if (tab == ChatOverlayState.activeTab) {
                 context.fill(x, panel.y + tabBarHeight - 2, x + width, panel.y + tabBarHeight - 1, 0xFFFFFFFF.toInt())
             }
-            x += width + 12
+            x += width + 10
         }
     }
 
@@ -113,12 +116,13 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
     }
 
     /**
-     * 메인 패널은 `panel.tab` 이 항상 null(전체 패널이라는 표식)이라 [activeTab] 을 따로
-     * 봐야 한다 — 이걸 빼먹으면 탭을 눌러도 필터가 안 걸린다(실제로 이 버그가 있었다).
-     * 분리된 패널은 고정 채널이라 자기 `tab` 을 그대로 쓴다.
+     * 메인 패널은 `panel.tab` 이 항상 null(전체 패널이라는 표식)이라
+     * [ChatOverlayState.activeTab] 을 따로 봐야 한다 — 이걸 빼먹으면 탭을 눌러도
+     * 필터가 안 걸린다(실제로 이 버그가 있었다). 분리된 패널은 고정 채널이라 자기
+     * `tab` 을 그대로 쓴다.
      */
     private fun filterChannelId(panel: OverlayPanel): String? =
-        if (panel === ChatOverlayState.main) activeTab.channelId else panel.tab?.channelId
+        if (panel === ChatOverlayState.main) ChatOverlayState.activeTab.channelId else panel.tab?.channelId
 
     /** 메시지가 아니라 **렌더 줄** 목록. 공지는 메시지 하나가 3줄(빈 줄 포함)이 된다. */
     private fun visibleLines(panel: OverlayPanel): List<Text?> {
@@ -141,7 +145,7 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
         var y = panel.y + panel.height - lineHeight
         for (line in visible.asReversed()) {
             if (line != null) {
-                context.drawTextWithShadow(textRenderer, line, panel.x + 4, y, 0xFFFFFF)
+                TextRenderUtil.drawScaled(context, textRenderer, line, panel.x + 4, y, 0xFFFFFF)
             }
             y -= lineHeight
             if (y < panel.y + tabBarHeight) break
@@ -184,17 +188,17 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
         if (inHeader(main, mouseX, mouseY)) {
             var x = main.x + 4
             for (tab in Tab.entries) {
-                val width = textRenderer.getWidth(tab.label)
+                val width = TextRenderUtil.scaledWidth(textRenderer, tab.label)
                 if (mouseX >= x && mouseX <= x + width) {
                     if (button == 1) {
                         ChatOverlayState.detach(tab)
                     } else {
-                        activeTab = tab
+                        ChatOverlayState.activeTab = tab
                         main.scrollOffset = 0
                     }
                     return true
                 }
-                x += width + 12
+                x += width + 10
             }
             startDrag(main, DragMode.MOVE, mouseX, mouseY)
             return true
@@ -282,7 +286,7 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
             if (text.startsWith("/")) {
                 MinecraftClient.getInstance().player?.networkHandler?.sendChatCommand(text.removePrefix("/"))
             } else {
-                CRChatNetworking.send(activeTab.sendChannelId, text)
+                CRChatNetworking.send(ChatOverlayState.activeTab.sendChannelId, text)
             }
         }
         close()

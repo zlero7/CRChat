@@ -3,6 +3,7 @@ package kr.teamcraft.crchat.client.ui
 import kr.teamcraft.crchat.client.state.ChatState
 import kr.teamcraft.crchat.protocol.ChatMessage
 import kr.teamcraft.crchat.protocol.Segment
+import net.minecraft.text.MutableText
 import net.minecraft.text.Text
 import net.minecraft.text.TextColor
 
@@ -12,17 +13,21 @@ import net.minecraft.text.TextColor
  */
 object ChatLineFormatter {
 
+    // 연두색(yellowgreen). "[!]" 태그 전용 — 느낌표만이 아니라 태그 전체에 적용한다.
+    private val SYSTEM_TAG_COLOR = TextColor.fromRgb(0x9ACD32)
+
     fun format(message: ChatMessage): Text {
         val body = message.segments.filterIsInstance<Segment.Text>().joinToString("") { it.value }
-        val color = message.segments.filterIsInstance<Segment.Text>().firstOrNull()?.color
-        // 공지는 발신자 표시 없이 내용만 보여준다 — 운영자 공지에 "[notice]:" 같은
-        // 접두를 붙이면 정식 공지처럼 안 보인다.
-        val plain = if (message.channel == "notice") body else "${ChatState.displayNameFor(message)}: $body"
-        val base = Text.literal(plain)
-        val parsed = color?.let { hex ->
-            runCatching { TextColor.fromRgb(hex.removePrefix("#").toInt(16)) }.getOrNull()
+        return when (message.channel) {
+            // 공지는 발신자 표시 없이 내용만 — 운영자 공지에 "[notice]:" 같은 접두가
+            // 붙으면 정식 공지처럼 안 보인다.
+            "notice" -> colored(Text.literal(body), messageColor(message))
+
+            // 바닐라 캡처 메시지(접속 알림·명령어 피드백)는 "[system]:" 대신 "[!]"로 줄인다.
+            "system" -> Text.literal("[!]").styled { it.withColor(SYSTEM_TAG_COLOR) }.append(": $body")
+
+            else -> colored(Text.literal("${ChatState.displayNameFor(message)}: $body"), messageColor(message))
         }
-        return parsed?.let { c -> base.styled { style -> style.withColor(c) } } ?: base
     }
 
     /**
@@ -31,4 +36,12 @@ object ChatLineFormatter {
      */
     fun expand(message: ChatMessage): List<Text?> =
         if (message.channel == "notice") listOf(null, format(message), null) else listOf(format(message))
+
+    private fun messageColor(message: ChatMessage): String? =
+        message.segments.filterIsInstance<Segment.Text>().firstOrNull()?.color
+
+    private fun colored(base: MutableText, hex: String?): Text {
+        val color = hex?.let { runCatching { TextColor.fromRgb(it.removePrefix("#").toInt(16)) }.getOrNull() }
+        return color?.let { c -> base.styled { style -> style.withColor(c) } } ?: base
+    }
 }

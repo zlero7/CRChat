@@ -6,9 +6,14 @@ import kr.teamcraft.crchat.client.ui.ChatOverlayRenderer
 import kr.teamcraft.crchat.client.ui.CRChatScreen
 import kr.teamcraft.crchat.protocol.PROTOCOL_VERSION
 import net.fabricmc.api.ClientModInitializer
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents
 import net.minecraft.client.gui.screen.ChatScreen
+import net.minecraft.client.option.KeyBinding
+import net.minecraft.client.util.InputUtil
+import org.lwjgl.glfw.GLFW
 import org.slf4j.LoggerFactory
 
 /**
@@ -42,6 +47,24 @@ class CRChatClientMod : ClientModInitializer {
                 // 정확히 리매핑되므로 이 방식을 쓴다.
                 val prefill = (screen as ChatScreenAccessor).crchat_getOriginalChatText()
                 client.setScreen(CRChatScreen(prefill))
+            }
+        }
+
+        // 한/영 전환. `Screen.keyPressed` 가로채기로는 실제 한/영 키를 못 잡았다
+        // (WORLD_1/2, 스캔코드까지 시도했지만 실사용에서 안 됨) — `KeyBinding` 은
+        // Minecraft 가 화면 포커스와 무관하게 자체적으로 추적하는 키 상태를 읽어서
+        // 훨씬 안정적이다. 기본키는 우측 Alt — 컨트롤 설정 메뉴에서 유저가 바꿀 수 있다.
+        val hangulToggleKey = KeyBindingHelper.registerKeyBinding(
+            KeyBinding(
+                "key.crchat.toggle_hangul",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_RIGHT_ALT,
+                "category.crchat",
+            ),
+        )
+        ClientTickEvents.END_CLIENT_TICK.register { client ->
+            while (hangulToggleKey.wasPressed()) {
+                (client.currentScreen as? CRChatScreen)?.toggleHangulMode()
             }
         }
 

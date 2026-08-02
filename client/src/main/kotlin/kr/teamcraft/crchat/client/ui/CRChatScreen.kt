@@ -270,11 +270,14 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
             submit()
             return true
         }
-        if (input.keyPressed(keyCode, modifiers)) return true
+        if (input.keyPressed(keyCode, scanCode, modifiers)) return true
         return super.keyPressed(keyCode, scanCode, modifiers)
     }
 
     override fun charTyped(chr: Char, modifiers: Int): Boolean = input.charTyped(chr)
+
+    /** [kr.teamcraft.crchat.client.CRChatClientMod] 가 KeyBinding 폴링으로 이 화면이 열려 있을 때 호출한다. */
+    fun toggleHangulMode() = input.toggleHangulMode()
 
     /**
      * `/` 로 시작하면 **명령어**다 — 채팅 채널로 보내면 안 되고, 바닐라 명령 실행

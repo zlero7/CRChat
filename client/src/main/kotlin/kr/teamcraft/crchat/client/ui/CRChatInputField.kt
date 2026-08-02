@@ -18,8 +18,8 @@ import org.lwjgl.glfw.GLFW
  * 키·문자 이벤트를 직접 여기로 넘겨준다.
  *
  * 커서 이동·드래그 선택은 아직 없다 — 지금은 끝에서만 입력·삭제되는 1차 버전이다.
- * 한/영 전환 키는 우측 Ctrl + 실제 한/영 키(WORLD_1/WORLD_2 로 들어옴, keyPressed 참조).
- * 원래 계획은 우측 Alt 였으나 실사용에서 안 먹혀 교체했다.
+ * 한/영 전환 키는 우측 Ctrl(여기서 직접 처리) + 실제 한/영 키(KeyBinding 폴링으로
+ * [toggleHangulMode] 를 통해 처리, [kr.teamcraft.crchat.client.CRChatClientMod] 참조).
  */
 class CRChatInputField(
     private val textRenderer: TextRenderer,
@@ -31,13 +31,7 @@ class CRChatInputField(
     private val composer = HangulComposer()
     private val buffer = StringBuilder()
 
-    /**
-     * 한/영 전환 상태. 기본은 한글 모드.
-     *
-     * 우측 Alt(AltGr) 는 Windows 에서 내부적으로 가짜 좌측 Ctrl 이벤트를 같이
-     * 보내는 걸로 알려져 있어(자판 종류에 따라 GLFW 가 이걸 못 걸러낼 수 있다)
-     * 우측 Ctrl 로 바꿨다.
-     */
+    /** 한/영 전환 상태. 기본은 한글 모드. */
     private var hangulMode = true
 
     /** keyPressed 에서 자모로 이미 처리한 키가 곧이어 들어올 charTyped 를 오염시키지 않게 막는 플래그. */
@@ -79,6 +73,18 @@ class CRChatInputField(
         composer.reset()
     }
 
+    /**
+     * `Screen.keyPressed` 가로채기로는 한/영 키를 도저히 못 잡아서(WORLD_1/2, 스캔코드
+     * 다 시도했지만 실사용에서 안 됨) [kr.teamcraft.crchat.client.CRChatClientMod] 가
+     * 등록한 `KeyBinding` 을 매 틱 폴링해서 여기로 직접 부른다. `KeyBinding.wasPressed()`
+     * 는 Minecraft 가 화면 포커스와 무관하게 자체적으로 추적하는 키 상태를 읽는 거라
+     * 화면 레벨 이벤트 가로채기보다 훨씬 안정적이다.
+     */
+    fun toggleHangulMode() {
+        flush()
+        hangulMode = !hangulMode
+    }
+
     fun render(context: DrawContext, textColor: Int) {
         // 배경 + 테두리 — 이게 없으면 게임 화면과 안 구분돼서 입력창처럼 안 보인다.
         context.fill(x, y, x + width, y + height, 0xEE101018.toInt())
@@ -115,7 +121,7 @@ class CRChatInputField(
     }
 
     /** @return 이 키를 소비했으면 true. false 면 [CRChatScreen] 이 다른 처리(ESC 등)로 넘겨야 한다. */
-    fun keyPressed(keyCode: Int, modifiers: Int): Boolean {
+    fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
         when (keyCode) {
             GLFW.GLFW_KEY_BACKSPACE -> {
                 if (!composer.backspace() && buffer.isNotEmpty()) {
@@ -125,12 +131,13 @@ class CRChatInputField(
                 return true
             }
 
-            // 우측 Ctrl(임시 기본값) + 실제 한/영 키. GLFW 엔 GLFW_KEY_HANGUL 같은 전용
-            // 상수가 없다 — 한국 키보드의 한/영·한자 키는 보통 이 예비 슬롯(WORLD_1/2)으로
-            // 들어온다(javap 로 GLFW.class 직접 확인함).
-            GLFW.GLFW_KEY_RIGHT_CONTROL, GLFW.GLFW_KEY_WORLD_1, GLFW.GLFW_KEY_WORLD_2 -> {
-                flush()
-                hangulMode = !hangulMode
+            // 우측 Ctrl — 실사용에서 확인된 백업 토글키. 실제 한/영 키는 이 화면 레벨
+            // 가로채기로 WORLD_1/2·스캔코드까지 시도해봤지만 못 잡았다 — 그건
+            // KeyBindingHelper + 매 틱 폴링으로 [toggleHangulMode] 를 통해 처리한다
+            // (CRChatClientMod 참조). 그 방식은 Minecraft 자체 키 상태 추적을 쓰기 때문에
+            // 화면이 이 이벤트를 실제로 받는지와 무관하게 동작한다.
+            GLFW.GLFW_KEY_RIGHT_CONTROL -> {
+                toggleHangulMode()
                 return true
             }
         }

@@ -18,7 +18,8 @@ import org.lwjgl.glfw.GLFW
  * 키·문자 이벤트를 직접 여기로 넘겨준다.
  *
  * 커서 이동·드래그 선택은 아직 없다 — 지금은 끝에서만 입력·삭제되는 1차 버전이다.
- * 한/영 전환 키는 우측 Ctrl (원래 계획은 우측 Alt 였으나 실사용에서 안 먹혀 교체, 아래 참조).
+ * 한/영 전환 키는 우측 Ctrl + 실제 한/영 키(WORLD_1/WORLD_2 로 들어옴, keyPressed 참조).
+ * 원래 계획은 우측 Alt 였으나 실사용에서 안 먹혀 교체했다.
  */
 class CRChatInputField(
     private val textRenderer: TextRenderer,
@@ -124,7 +125,10 @@ class CRChatInputField(
                 return true
             }
 
-            GLFW.GLFW_KEY_RIGHT_CONTROL -> {
+            // 우측 Ctrl(임시 기본값) + 실제 한/영 키. GLFW 엔 GLFW_KEY_HANGUL 같은 전용
+            // 상수가 없다 — 한국 키보드의 한/영·한자 키는 보통 이 예비 슬롯(WORLD_1/2)으로
+            // 들어온다(javap 로 GLFW.class 직접 확인함).
+            GLFW.GLFW_KEY_RIGHT_CONTROL, GLFW.GLFW_KEY_WORLD_1, GLFW.GLFW_KEY_WORLD_2 -> {
                 flush()
                 hangulMode = !hangulMode
                 return true

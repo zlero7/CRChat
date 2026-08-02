@@ -5,7 +5,6 @@ import kr.teamcraft.crchat.common.hangul.HangulComposer
 import net.minecraft.client.font.TextRenderer
 import net.minecraft.client.gui.DrawContext
 import org.lwjgl.glfw.GLFW
-import org.slf4j.LoggerFactory
 
 /**
  * 자체 두벌식 조합기를 쓰는 채팅 입력창. (기획서 부록 A)
@@ -20,10 +19,14 @@ import org.slf4j.LoggerFactory
  *
  * 커서 이동·드래그 선택은 아직 없다 — 지금은 끝에서만 입력·삭제되는 1차 버전이다.
  *
- * 한/영 전환 키는 **우측 Ctrl 뿐**이다. 실제 물리 한/영 키는 일부러 안 잡는다 —
- * 그 키는 Windows 자체의 IME 를 통째로 전환하는 시스템 키라, 눌리는 순간부터
- * 타이핑이 OS 한글 입력기를 거쳐 넘어오고 우리 조합기는 그걸 이중 입력으로
- * 보고 버린다(A.9) — "OS 전환은 되는데 채팅이 안 쳐지는" 증상의 원인이었다.
+ * 한/영 전환 키는 **우측 Ctrl 뿐**이다.
+ * - 실제 물리 한/영 키는 일부러 안 잡는다 — 그 키는 Windows 자체의 IME 를 통째로
+ *   전환하는 시스템 키라, 눌리는 순간부터 타이핑이 OS 한글 입력기를 거쳐 넘어오고
+ *   우리 조합기는 그걸 이중 입력으로 보고 버린다(A.9) — "OS 전환은 되는데 채팅이
+ *   안 쳐지는" 증상의 원인이었다.
+ * - 우측 Alt 도 시도했지만 로그로 확인해보니 `keyCode=346` 이 게임에 아예 안
+ *   들어온다 — Windows 가 언어 전환 단축키 등으로 그 키 자체를 게임에 도달하기도
+ *   전에 가로채는 것으로 보인다. 게임 안에서 손쓸 방법이 없어 포기했다.
  */
 class CRChatInputField(
     private val textRenderer: TextRenderer,
@@ -34,7 +37,6 @@ class CRChatInputField(
 ) {
     private val composer = HangulComposer()
     private val buffer = StringBuilder()
-    private val logger = LoggerFactory.getLogger("CRChat/Input")
 
     /** 한/영 전환 상태. 기본은 한글 모드. */
     private var hangulMode = true
@@ -120,9 +122,6 @@ class CRChatInputField(
 
     /** @return 이 키를 소비했으면 true. false 면 [CRChatScreen] 이 다른 처리(ESC 등)로 넘겨야 한다. */
     fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
-        // 진단용. Alt 를 눌렀을 때 이 화면까지 뭐가(혹은 아무것도 안) 오는지 확인한다.
-        logger.info("keyPressed keyCode={} scanCode={} modifiers={}", keyCode, scanCode, modifiers)
-
         when (keyCode) {
             GLFW.GLFW_KEY_BACKSPACE -> {
                 if (!composer.backspace() && buffer.isNotEmpty()) {
@@ -132,11 +131,9 @@ class CRChatInputField(
                 return true
             }
 
-            // 한/영 전환 키. 우측 Ctrl 은 검증됨. 우측 Alt 도 같은 방식(화면
-            // keyPressed 직접 비교)으로 다시 시도한다 — "AltGr 문제" 는 테스트 없이
-            // 넘겨짚은 것이었다. 실제 물리 한/영 키(라벨 있는 키)는 일부러 안 잡는다,
-            // 클래스 문서 참조.
-            GLFW.GLFW_KEY_RIGHT_CONTROL, GLFW.GLFW_KEY_RIGHT_ALT -> {
+            // 유일한 한/영 전환 키. 클래스 문서 참조 — 우측 Alt·물리 한/영 키는
+            // Windows 가 게임에 도달하기도 전에 가로채서 코드로 손쓸 수 없었다.
+            GLFW.GLFW_KEY_RIGHT_CONTROL -> {
                 toggleHangulMode()
                 return true
             }

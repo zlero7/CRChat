@@ -7,7 +7,6 @@ import kr.teamcraft.crchat.client.state.OverlayPanel
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
-import net.minecraft.client.gui.widget.TextFieldWidget
 import net.minecraft.text.Text
 import org.lwjgl.glfw.GLFW
 
@@ -23,7 +22,7 @@ import org.lwjgl.glfw.GLFW
  */
 class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("CRChat")) {
 
-    private lateinit var input: TextFieldWidget
+    private lateinit var input: CRChatInputField
 
     private val tabBarHeight = ChatUiScale.TAB_BAR_HEIGHT
     private val lineHeight = ChatUiScale.LINE_HEIGHT
@@ -47,11 +46,8 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
         for (panel in ChatOverlayState.panels) panel.scrollOffset = 0
 
         val main = ChatOverlayState.main
-        input = TextFieldWidget(textRenderer, main.x, main.y + main.height + 4, main.width, inputHeight, Text.literal(""))
-        input.setMaxLength(256)
+        input = CRChatInputField(textRenderer, main.x, main.y + main.height + 4, main.width, inputHeight)
         input.text = initialText
-        addDrawableChild(input)
-        setInitialFocus(input)
     }
 
     // 배경 흐림·어둡게 효과를 끈다 — 평소 오버레이와 이질감이 없도록.
@@ -68,6 +64,7 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
         for (panel in ChatOverlayState.panels) {
             renderPanel(context, panel, mouseX, mouseY)
         }
+        input.render(context, 0xFFFFFF)
 
         super.render(context, mouseX, mouseY, delta)
     }
@@ -273,8 +270,11 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
             submit()
             return true
         }
+        if (input.keyPressed(keyCode, modifiers)) return true
         return super.keyPressed(keyCode, scanCode, modifiers)
     }
+
+    override fun charTyped(chr: Char, modifiers: Int): Boolean = input.charTyped(chr)
 
     /**
      * `/` 로 시작하면 **명령어**다 — 채팅 채널로 보내면 안 되고, 바닐라 명령 실행

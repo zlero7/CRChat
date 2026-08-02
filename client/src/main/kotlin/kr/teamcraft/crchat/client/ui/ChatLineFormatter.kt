@@ -13,8 +13,7 @@ import net.minecraft.text.TextColor
  */
 object ChatLineFormatter {
 
-    // 연두색(yellowgreen). "[!]" 태그 전용 — 느낌표만이 아니라 태그 전체에 적용한다.
-    private val SYSTEM_TAG_COLOR = TextColor.fromRgb(0x9ACD32)
+    private val SYSTEM_TAG_COLOR = TextColor.fromRgb(0xFFFF55) // 노랑 — "!" 만 이 색
 
     fun format(message: ChatMessage): Text {
         val body = message.segments.filterIsInstance<Segment.Text>().joinToString("") { it.value }
@@ -23,10 +22,14 @@ object ChatLineFormatter {
             // 붙으면 정식 공지처럼 안 보인다.
             "notice" -> colored(Text.literal(body), messageColor(message))
 
-            // 바닐라 캡처 메시지(접속 알림·명령어 피드백)는 "[system]:" 대신 "[!]"로 줄인다.
-            "system" -> Text.literal("[!]").styled { it.withColor(SYSTEM_TAG_COLOR) }.append(": $body")
+            // 바닐라 캡처 메시지(접속 알림·명령어 피드백)는 "[!] 내용" 형태. "!" 만 노랑,
+            // 대괄호·본문은 흰색(그리는 쪽에서 넘기는 기본색을 그대로 쓴다 — 따로 안 입힘).
+            "system" -> Text.literal("[")
+                .append(Text.literal("!").styled { it.withColor(SYSTEM_TAG_COLOR) })
+                .append(Text.literal("] $body"))
 
-            else -> colored(Text.literal("${ChatState.displayNameFor(message)}: $body"), messageColor(message))
+            // 일반 채팅은 채널 색을 입히지 않고 흰색 그대로 둔다.
+            else -> Text.literal("${ChatState.displayNameFor(message)}: $body")
         }
     }
 

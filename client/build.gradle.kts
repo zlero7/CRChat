@@ -29,10 +29,12 @@ dependencies {
     // 전용 런처 배포라 별도 모드 배포 부담이 없으므로 FLK 의존이 더 낫다.
     modImplementation("net.fabricmc:fabric-language-kotlin:$flkVersion")
 
-    // protocol 은 순수 Kotlin(비-모드) 라이브러리다. Fabric Loader 의 Jar-in-Jar 로
+    // protocol·common 은 순수 Kotlin(비-모드) 라이브러리다. Fabric Loader 의 Jar-in-Jar 로
     // 모드 jar 안에 그대로 넣는다 — 리매핑 대상이 아니므로 modImplementation 이 아니라
     // 일반 project 의존 + include() 로 충분하다.
     include(implementation(project(":protocol"))!!)
+    // 자체 한글 조합기(HangulComposer, Dubeolsik) — 부록 A. 입력창에서 직접 쓴다.
+    include(implementation(project(":common"))!!)
 }
 
 tasks.processResources {

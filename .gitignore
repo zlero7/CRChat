@@ -1,0 +1,11 @@
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+.idea/
+*.iml
+out/
+.kotlin/
+
+# 로컬 통합 테스트 환경 (Paper·Velocity 서버, DB 볼륨)
+run/

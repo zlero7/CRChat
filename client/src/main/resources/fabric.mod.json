@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "crchat",
+  "version": "${version}",
+  "name": "CRChat",
+  "description": "채널·탭 기반 채팅 클라이언트 모드",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "kr.teamcraft.crchat.client.CRChatClientMod"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.0",
+    "minecraft": "1.21.4",
+    "fabric-language-kotlin": "*",
+    "fabric-api": "*"
+  }
+}

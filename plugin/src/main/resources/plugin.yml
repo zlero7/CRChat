@@ -1,0 +1,12 @@
+name: CRChat
+version: ${version}
+main: kr.teamcraft.crchat.plugin.CRChatPlugin
+api-version: '1.21'
+author: teamcraft
+description: 채널·탭 기반 채팅 시스템 (바닐라 채팅 대체)
+
+commands:
+  공지:
+    description: 전 서버 공지 (공지 탭으로 간다, 4.1)
+    usage: /공지 <내용>
+    permission: crchat.admin.notice

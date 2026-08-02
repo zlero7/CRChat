@@ -1,0 +1,50 @@
+# ══════════════════════════════════════════
+#  채널 정의 (기획서 4.3, 부록 C.3)
+#  색은 전체 탭에서 채널을 구분하는 유일한 수단입니다.
+# ══════════════════════════════════════════
+
+global:
+  display: "전체"
+  color: "#FFFFFF"
+  cooldown: 2.0
+  permission: crchat.channel.global
+
+notice:
+  display: "공지"
+  color: "#FF6B6B"
+  receive-only: true
+  # /공지 명령어로만 발행됩니다. 시스템과 분리하는 이유는 4.1 참조.
+
+general:
+  display: "일반"
+  color: "#B8E986"
+  cooldown: 1.0
+  permission: crchat.channel.general
+  # 이 반경(블록) 안의 온라인 플레이어만 수신합니다 — 거리 판정은 서버가 합니다 (2.4).
+  radius: 100.0
+
+guild:
+  display: "길드"
+  color: "#FFE066"
+  cooldown: 0.5
+  # GroupProvider 가 등록되지 않으면 탭 자체가 표시되지 않습니다. (4.6)
+  requires: guild
+  permission: crchat.channel.guild
+
+party:
+  display: "파티"
+  color: "#7FD8E8"
+  cooldown: 0.5
+  requires: party
+  permission: crchat.channel.party
+
+system:
+  display: "시스템"
+  color: null
+  receive-only: true
+
+# ── 파티 그룹 판정 (4.6) ──────────────────────
+party-provider:
+  type: vanilla-team
+  # 이 접두어로 시작하는 스코어보드 팀만 파티로 인정합니다.
+  team-prefix: "party_"

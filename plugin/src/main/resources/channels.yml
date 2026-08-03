@@ -20,8 +20,7 @@ general:
   color: "#B8E986"
   cooldown: 1.0
   permission: crchat.channel.general
-  # 이 반경(블록) 안의 온라인 플레이어만 수신합니다 — 거리 판정은 서버가 합니다 (2.4).
-  radius: 100.0
+  # 반경 제한 없음 — 서버 전체(및 크로스서버 연동 시 다른 서버까지) 들립니다.
 
 guild:
   display: "길드"

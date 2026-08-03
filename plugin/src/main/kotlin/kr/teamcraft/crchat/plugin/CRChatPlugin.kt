@@ -8,6 +8,10 @@ import kr.teamcraft.crchat.plugin.channel.ChannelRegistry
 import kr.teamcraft.crchat.plugin.channel.ChannelResolver
 import kr.teamcraft.crchat.plugin.channel.CooldownTracker
 import kr.teamcraft.crchat.plugin.channel.VanillaTeamPartyProvider
+import kr.teamcraft.crchat.plugin.network.ChatRelay
+import kr.teamcraft.crchat.plugin.network.ChatRelayDatabase
+import kr.teamcraft.crchat.plugin.network.NetworkConfig
+import kr.teamcraft.crchat.plugin.network.RelayEnvelope
 import kr.teamcraft.crchat.plugin.sender.SenderRegistry
 import kr.teamcraft.crchat.protocol.C2S
 import kr.teamcraft.crchat.protocol.CHANNEL_ID
@@ -36,14 +40,31 @@ import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Phase 0~1 (기획서 13장) — HELLO 핸드셰이크 + 채널 등록·권한·라우팅 +
- * 바닐라 채팅 취소. 필터 체인·뮤트·저장·Redis 는 이후 Phase 다.
+ * 바닐라 채팅 취소. 필터 체인·뮤트·저장은 이후 Phase 다.
+ *
+ * Phase 8(크로스서버)도 여기 붙어 있다 — 기획서는 Redis Pub/Sub 을 상정했지만,
+ * 이 서버 환경은 MySQL 을 이미 갖추고 있어([kr.teamcraft.crchat.plugin.network.ChatRelayDatabase])
+ * 폴링 기반으로 대체했다. 길드·파티는 아직 서버 로컬 판정만 가능해 [relayedChannels] 에서 빠져 있다.
  */
 class CRChatPlugin : JavaPlugin(), Listener, PluginMessageListener, CommandExecutor {
 
     private val channelRegistry = ChannelRegistry(this)
     private val channelResolver = ChannelResolver(channelRegistry)
     private val cooldowns = CooldownTracker()
-    private val senders = SenderRegistry()
+
+    /**
+     * 네트워크 설정(server-id, DB 접속 정보). `senders`·`chatRelay` 가 여기 값이
+     * 있어야 만들어지므로 생성자가 아니라 [onEnable] 에서 채운다.
+     */
+    private lateinit var networkConfig: NetworkConfig
+    private lateinit var senders: SenderRegistry
+
+    /** 크로스서버 연동(13장 Phase 8)이 꺼져 있거나 DB 접속에 실패하면 둘 다 null 로 남고, 로컬 전달만 동작한다. */
+    private var relayDb: ChatRelayDatabase? = null
+    private var chatRelay: ChatRelay? = null
+
+    /** 다른 서버까지 퍼져야 하는 채널. 길드·파티는 아직 서버 로컬 판정만 가능해 제외한다(13장 Phase 8 참고). */
+    private val relayedChannels = setOf(Channel.GLOBAL, Channel.GENERAL)
 
     /** 접속 시 HELLO 를 보내고 응답을 기다리는 유저. 응답이 오면 제거된다. */
     private val awaitingHello = ConcurrentHashMap.newKeySet<UUID>()
@@ -55,6 +76,9 @@ class CRChatPlugin : JavaPlugin(), Listener, PluginMessageListener, CommandExecu
 
     override fun onEnable() {
         channelRegistry.load()
+        networkConfig = NetworkConfig.load(this)
+        setUpNetwork()
+        senders = SenderRegistry(this, relayDb)
 
         server.servicesManager.register(
             GroupProvider::class.java,
@@ -67,10 +91,30 @@ class CRChatPlugin : JavaPlugin(), Listener, PluginMessageListener, CommandExecu
         server.messenger.registerIncomingPluginChannel(this, CHANNEL_ID, this)
         server.pluginManager.registerEvents(this, this)
         getCommand("공지")?.setExecutor(this)
-        logger.info("CRChat 활성화 (protocol v$PROTOCOL_VERSION)")
+        logger.info("CRChat 활성화 (protocol v$PROTOCOL_VERSION, server-id=${networkConfig.serverId})")
+    }
+
+    /**
+     * `network.enabled` 가 꺼져 있거나 MySQL 접속 자체가 안 되면 조용히 로컬 전달만
+     * 쓰는 모드로 남는다 — DB 하나 때문에 서버 전체가 못 뜨면 안 된다.
+     */
+    private fun setUpNetwork() {
+        if (!networkConfig.networkEnabled) return
+        val db = ChatRelayDatabase(networkConfig)
+        try {
+            db.ensureSchema()
+            relayDb = db
+            chatRelay = ChatRelay(this, db, networkConfig, ::onRelayedMessage).also { it.start() }
+            logger.info("크로스서버 채팅 연동 활성화 (MySQL)")
+        } catch (e: Exception) {
+            logger.warning("크로스서버 채팅 연동 초기화 실패 — 로컬 전달만 사용합니다: ${e.message}")
+            db.close()
+        }
     }
 
     override fun onDisable() {
+        chatRelay?.stop()
+        relayDb?.close()
         server.messenger.unregisterOutgoingPluginChannel(this)
         server.messenger.unregisterIncomingPluginChannel(this)
         logger.info("CRChat 비활성화")
@@ -81,6 +125,7 @@ class CRChatPlugin : JavaPlugin(), Listener, PluginMessageListener, CommandExecu
     @EventHandler
     fun onJoin(event: PlayerJoinEvent) {
         val player = event.player
+        senders.prewarm(player)
         awaitingHello += player.uniqueId
 
         // 클라가 채널을 이미 등록해 둔 경우(드물게 join 이벤트보다 먼저 옴)만 여기서 바로 보낸다.
@@ -220,13 +265,32 @@ class CRChatPlugin : JavaPlugin(), Listener, PluginMessageListener, CommandExecu
             recipient.sendPluginMessage(this, CHANNEL_ID, senderDefBytes)
             recipient.sendPluginMessage(this, CHANNEL_ID, messageBytes)
         }
+
+        if (channel in relayedChannels) {
+            chatRelay?.publish(channel.id, RelayEnvelope(chatMessage, senderDef))
+        }
+    }
+
+    /**
+     * 다른 서버가 MySQL 릴레이 테이블에 올린 메시지를 이 서버 온라인 플레이어에게
+     * 전달한다. GLOBAL·GENERAL 은 애초에 서버 전체가 대상이라([ChannelResolver.recipients])
+     * 여기서도 그대로 전체 온라인 플레이어에게 보낸다 — 발신 서버가 아니므로 발신자를
+     * 다시 만들 수 없어 [RelayEnvelope.senderDef] 를 그대로 실어 보낸다.
+     */
+    private fun onRelayedMessage(envelope: RelayEnvelope) {
+        val senderDefBytes = envelope.senderDef?.let { PacketCodec.encode(S2C.SenderDefs(listOf(it))) }
+        val messageBytes = PacketCodec.encode(S2C.Messages(listOf(envelope.chatMessage)))
+        for (recipient in server.onlinePlayers) {
+            senderDefBytes?.let { recipient.sendPluginMessage(this, CHANNEL_ID, it) }
+            recipient.sendPluginMessage(this, CHANNEL_ID, messageBytes)
+        }
     }
 
     private fun sendError(player: Player, reasonKey: String) {
         player.sendPluginMessage(this, CHANNEL_ID, PacketCodec.encode(S2C.Error(reasonKey)))
     }
 
-    private fun helloPacket() = S2C.Hello(protocolVersion = PROTOCOL_VERSION, serverId = "lobby")
+    private fun helloPacket() = S2C.Hello(protocolVersion = PROTOCOL_VERSION, serverId = networkConfig.serverId)
 
     // ── 공지 (7.3, 4.1) ─────────────────────────────────
 
@@ -258,6 +322,7 @@ class CRChatPlugin : JavaPlugin(), Listener, PluginMessageListener, CommandExecu
         for (recipient in server.onlinePlayers) {
             recipient.sendPluginMessage(this, CHANNEL_ID, bytes)
         }
+        chatRelay?.publish(Channel.NOTICE.id, RelayEnvelope(message, null))
         logger.info("[공지] $sanitized")
     }
 }

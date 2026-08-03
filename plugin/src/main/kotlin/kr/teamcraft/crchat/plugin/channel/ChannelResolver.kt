@@ -22,24 +22,21 @@ class ChannelResolver(private val registry: ChannelRegistry) {
         return groupProvider(requires).groupId(player) != null
     }
 
-    /** [channel] 로 보낸 메시지를 받아야 할 온라인 플레이어. */
+    /**
+     * [channel] 로 보낸 메시지를 받아야 할 온라인 플레이어.
+     *
+     * GENERAL 은 원래 반경(4.1) 안에서만 들렸는데, 크로스서버 연동(13장 Phase 8)을
+     * 붙이면서 반경 제한을 없앴다 — "주변 100칸"과 "다른 서버까지 전부"는 애초에
+     * 안 맞는 조합이라, 일반도 GLOBAL 처럼 서버 전체(그리고 [kr.teamcraft.crchat.plugin.network.ChatRelay]
+     * 를 통해 다른 서버까지)로 보인다. 남는 채널 구분은 색·탭뿐이다.
+     */
     fun recipients(channel: Channel, sender: Player): Collection<Player> = when (channel) {
         Channel.GLOBAL -> Bukkit.getOnlinePlayers()
         Channel.NOTICE -> emptyList() // receive-only. 발신은 /공지 명령어 전용 경로로만 (CRChatPlugin)
         Channel.SYSTEM -> emptyList() // receive-only. 발신 자체를 isAvailable 이 막는다
-        Channel.GENERAL -> nearbyRecipients(sender)
+        Channel.GENERAL -> Bukkit.getOnlinePlayers()
         Channel.GUILD -> groupRecipients(GroupType.GUILD, sender)
         Channel.PARTY -> groupRecipients(GroupType.PARTY, sender)
-    }
-
-    /** 같은 월드에서 반경(radius, 4.1) 안에 있는 온라인 플레이어만 거른다. 거리 판정은 서버 몫이다 (2.4). */
-    private fun nearbyRecipients(sender: Player): Collection<Player> {
-        val radius = registry.config(Channel.GENERAL).radius ?: return emptyList()
-        val origin = sender.location
-        val radiusSquared = radius * radius
-        return Bukkit.getOnlinePlayers().filter { candidate ->
-            candidate.world == origin.world && candidate.location.distanceSquared(origin) <= radiusSquared
-        }
     }
 
     private fun groupRecipients(type: GroupType, sender: Player): Collection<Player> {

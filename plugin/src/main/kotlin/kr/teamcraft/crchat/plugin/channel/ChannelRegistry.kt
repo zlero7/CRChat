@@ -33,7 +33,6 @@ class ChannelRegistry(private val plugin: JavaPlugin) {
                 permission = section?.getString("permission"),
                 requires = section?.getString("requires")?.let { parseGroupType(it) },
                 receiveOnly = section?.getBoolean("receive-only") ?: false,
-                radius = section?.takeIf { it.contains("radius") }?.getDouble("radius"),
             )
         }
 

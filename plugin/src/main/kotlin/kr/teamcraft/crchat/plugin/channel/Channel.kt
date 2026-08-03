@@ -34,6 +34,4 @@ data class ChannelConfig(
     /** non-null 이면 해당 GroupProvider 가 등록되어 있어야 채널이 열린다 */
     val requires: GroupType?,
     val receiveOnly: Boolean = false,
-    /** non-null 이면 이 반경(블록) 안의 온라인 플레이어만 수신한다 (일반 채널, 4.1) */
-    val radius: Double? = null,
 )

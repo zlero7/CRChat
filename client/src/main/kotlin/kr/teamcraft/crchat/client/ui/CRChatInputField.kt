@@ -4,6 +4,8 @@ import kr.teamcraft.crchat.common.hangul.Dubeolsik
 import kr.teamcraft.crchat.common.hangul.HangulComposer
 import net.minecraft.client.font.TextRenderer
 import net.minecraft.client.gui.DrawContext
+import net.minecraft.text.Style
+import net.minecraft.text.Text
 import org.lwjgl.glfw.GLFW
 
 /**
@@ -33,7 +35,8 @@ class CRChatInputField(
     var x: Int,
     var y: Int,
     var width: Int,
-    val height: Int,
+    /** 한 줄일 때의 최소 높이. 자동 줄넘김으로 줄이 늘어나면 [renderHeight] 가 이보다 커진다. */
+    private val minHeight: Int,
 ) {
     private val composer = HangulComposer()
     private val buffer = StringBuilder()
@@ -85,43 +88,85 @@ class CRChatInputField(
         hangulMode = !hangulMode
     }
 
+    /** 한/영 표시(17px)+구분선 뒤, 오른쪽 여백을 뺀 실제 텍스트 시작 x. */
+    private val textLeftMargin = 21
+    private val textRightMargin = 4
+
+    private fun wrapWidth(): Int =
+        ChatUiScale.wrapWidth((width - textLeftMargin - textRightMargin).coerceAtLeast(20))
+
+    /**
+     * 자동 줄넘김된 순수 문자열 줄들. 가로로 좁힌 채 긴 문장을 치면 옆으로 삐져나오는 대신
+     * 메시지 영역([ChatLineFormatter.wrappedLinesFor])과 똑같이 줄이 나뉘어야 한다.
+     */
+    private fun wrappedPlainLines(): List<String> {
+        val display = text
+        if (display.isEmpty()) return listOf("")
+        return textRenderer.textHandler.wrapLines(Text.literal(display), wrapWidth(), Style.EMPTY)
+            .map { it.string }
+    }
+
+    /** 줄 수에 맞춰 늘어난 실제 높이. [CRChatScreen] 이 배경·다음 요소 배치에 참조한다. */
+    val renderHeight: Int
+        get() = (wrappedPlainLines().size * ChatUiScale.LINE_HEIGHT + 6).coerceAtLeast(minHeight)
+
     fun render(context: DrawContext, textColor: Int) {
+        val lines = wrappedPlainLines()
+        val boxHeight = renderHeight
+
         // 배경 + 테두리 — 이게 없으면 게임 화면과 안 구분돼서 입력창처럼 안 보인다.
-        context.fill(x, y, x + width, y + height, 0xEE101018.toInt())
+        context.fill(x, y, x + width, y + boxHeight, 0xEE101018.toInt())
         context.fill(x, y, x + width, y + 1, 0x77FFFFFF.toInt()) // 위
-        context.fill(x, y + height - 1, x + width, y + height, 0x77FFFFFF.toInt()) // 아래
-        context.fill(x, y, x + 1, y + height, 0x77FFFFFF.toInt()) // 왼쪽
-        context.fill(x + width - 1, y, x + width, y + height, 0x77FFFFFF.toInt()) // 오른쪽
+        context.fill(x, y + boxHeight - 1, x + width, y + boxHeight, 0x77FFFFFF.toInt()) // 아래
+        context.fill(x, y, x + 1, y + boxHeight, 0x77FFFFFF.toInt()) // 왼쪽
+        context.fill(x + width - 1, y, x + width, y + boxHeight, 0x77FFFFFF.toInt()) // 오른쪽
 
         val indicator = if (hangulMode) "한" else "EN"
         val indicatorX = x + 3
-        TextRenderUtil.drawScaled(context, textRenderer, net.minecraft.text.Text.literal(indicator), indicatorX, y + 3, 0x88FF88)
+        TextRenderUtil.drawScaled(context, textRenderer, Text.literal(indicator), indicatorX, y + 3, 0x88FF88)
 
-        // 한/영 표시와 실제 입력 사이 구분선
-        context.fill(x + 17, y + 2, x + 18, y + height - 2, 0x44FFFFFF.toInt())
+        // 한/영 표시와 실제 입력 사이 구분선 — 줄이 늘어난 만큼 세로로 같이 늘어난다.
+        context.fill(x + 17, y + 2, x + 18, y + boxHeight - 2, 0x44FFFFFF.toInt())
 
-        val textX = x + 21
-        val display = text
+        val textX = x + textLeftMargin
 
-        // 입력창을 가로로 좁게 줄였을 때 긴 문장이 테두리 밖으로 삐져나오지 않도록 자른다.
-        context.enableScissor(textX, y, x + width - 2, y + height)
-        TextRenderUtil.drawScaled(context, textRenderer, net.minecraft.text.Text.literal(display), textX, y + 3, textColor)
+        // 입력창을 가로로 좁게 줄였을 때도(자동 줄넘김이 못 끊는 긴 토큰 대비) 테두리
+        // 밖으로 삐져나오지 않도록 한 번 더 잘라낸다.
+        context.enableScissor(textX, y, x + width - 2, y + boxHeight)
+        var lineY = y + 3
+        for (line in lines) {
+            TextRenderUtil.drawScaled(context, textRenderer, Text.literal(line), textX, lineY, textColor)
+            lineY += ChatUiScale.LINE_HEIGHT
+        }
 
         if (composer.isComposing) {
-            // 조합 중인 글자 밑에 밑줄을 긋는다 (A.8) — 스케일이 걸려 있으니 폭도 스케일만큼 줄여 계산한다.
-            val scale = ChatUiScale.TEXT_SCALE
-            val prefixWidth = (textRenderer.getWidth(buffer.toString()) * scale).toInt()
-            val preeditWidth = (textRenderer.getWidth(composer.preeditText()) * scale).toInt()
-            val underlineY = y + 3 + (textRenderer.fontHeight * scale).toInt()
-            context.fill(
-                textX + prefixWidth,
-                underlineY,
-                textX + prefixWidth + preeditWidth,
-                underlineY + 1,
-                0xFFFFFFFF.toInt(),
-            )
+            drawComposingUnderline(context, lines, textX, y)
         }
         context.disableScissor()
+    }
+
+    /**
+     * 조합 중인 글자 밑에 밑줄을 긋는다 (A.8). 조합 중인 자모는 항상 전체 텍스트의
+     * 맨 끝에 붙으므로 — 자모 자체엔 공백이 없어 줄바꿈이 그 안에서 끊기는 일이
+     * 실질적으로 없다 — 마지막 줄의 접미사로만 찾으면 된다.
+     */
+    private fun drawComposingUnderline(context: DrawContext, lines: List<String>, textX: Int, boxY: Int) {
+        val lastIndex = lines.lastIndex
+        val lastLine = lines[lastIndex]
+        val preedit = composer.preeditText()
+        val splitAt = (lastLine.length - preedit.length).coerceAtLeast(0)
+
+        val scale = ChatUiScale.TEXT_SCALE
+        val prefixWidth = (textRenderer.getWidth(lastLine.substring(0, splitAt)) * scale).toInt()
+        val preeditWidth = (textRenderer.getWidth(lastLine.substring(splitAt)) * scale).toInt()
+        val underlineY = boxY + 3 + lastIndex * ChatUiScale.LINE_HEIGHT + (textRenderer.fontHeight * scale).toInt()
+        context.fill(
+            textX + prefixWidth,
+            underlineY,
+            textX + prefixWidth + preeditWidth,
+            underlineY + 1,
+            0xFFFFFFFF.toInt(),
+        )
     }
 
     /** @return 이 키를 소비했으면 true. false 면 [CRChatScreen] 이 다른 처리(ESC 등)로 넘겨야 한다. */

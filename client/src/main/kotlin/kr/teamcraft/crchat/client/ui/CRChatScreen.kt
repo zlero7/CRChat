@@ -197,7 +197,7 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
     }
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
-        if (commandSuggestions.mouseClicked(mouseX, mouseY, input.text) { input.text = it }) return true
+        if (commandSuggestions.mouseClicked(mouseX, mouseY) { input.text = it }) return true
 
         // 크기 조절 손잡이가 최우선이다 (다른 영역과 겹쳐도 항상 잡을 수 있어야 함)
         for (panel in ChatOverlayState.panels) {
@@ -298,17 +298,17 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
             when (keyCode) {
                 GLFW.GLFW_KEY_TAB -> {
                     commandSuggestions.cycle(forward = (modifiers and GLFW.GLFW_MOD_SHIFT) == 0)
-                    commandSuggestions.applySelected(input.text)?.let { input.text = it }
+                    commandSuggestions.applySelected()?.let { input.text = it }
                     return true
                 }
                 GLFW.GLFW_KEY_UP -> {
                     commandSuggestions.cycle(forward = false)
-                    commandSuggestions.applySelected(input.text)?.let { input.text = it }
+                    commandSuggestions.applySelected()?.let { input.text = it }
                     return true
                 }
                 GLFW.GLFW_KEY_DOWN -> {
                     commandSuggestions.cycle(forward = true)
-                    commandSuggestions.applySelected(input.text)?.let { input.text = it }
+                    commandSuggestions.applySelected()?.let { input.text = it }
                     return true
                 }
                 GLFW.GLFW_KEY_ESCAPE -> {

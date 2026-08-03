@@ -25,6 +25,14 @@ class CommandSuggestions(private val textRenderer: TextRenderer) {
     private var selected = 0
     private var windowStart = 0
     private var lastText: String? = null
+
+    /**
+     * [update] 가 지금 목록을 받아올 때 쓴 원본 텍스트("/" 포함) — [Suggestion.getRange] 가
+     * 이 문자열 기준 오프셋이라, 매번 적용도 반드시 이 기준으로 다시 계산해야 한다.
+     * 직전에 적용한 결과(이미 한 번 바뀐 텍스트)를 기준으로 또 적용하면 오프셋이 안 맞아서
+     * 이전 후보 텍스트 뒤에 새 후보가 계속 덧붙는 식으로 깨진다 — 실제로 이 버그가 있었다.
+     */
+    private var baseText: String? = null
     private var closed = false
 
     /** 렌더된 각 줄의 화면 좌표 — 마우스 클릭 판정에 쓴다. */
@@ -37,6 +45,7 @@ class CommandSuggestions(private val textRenderer: TextRenderer) {
     fun update(text: String) {
         if (text == lastText) return
         lastText = text
+        baseText = text
         closed = false
         selected = 0
         windowStart = 0
@@ -76,15 +85,20 @@ class CommandSuggestions(private val textRenderer: TextRenderer) {
     }
 
     /**
-     * 지금 선택된 후보를 `currentText`(맨 앞 "/" 포함)에 적용한 결과를 돌려준다.
-     * 반환값을 그대로 `input.text` 에 대입하면 된다. 이 적용으로 바뀐 텍스트는
-     * [lastText] 로 미리 기록해 두므로 — 다음 프레임 [update] 가 같은 텍스트를 보고
-     * 그냥 넘어가서 방금 받은 목록(및 선택 위치)이 안 날아가고 계속 Tab 으로 순환된다.
+     * 지금 선택된 후보를 적용한 결과를 돌려준다. 반환값을 그대로 `input.text` 에
+     * 대입하면 된다. **항상 [baseText](목록을 받아올 때의 원본) 기준으로 적용한다** —
+     * 방금 적용해서 바뀐 텍스트를 기준으로 또 적용하면 [Suggestion.getRange] 오프셋이
+     * 어긋나서 이전 후보 뒤에 다음 후보가 계속 덧붙는 식으로 깨진다.
+     *
+     * 결과는 [lastText] 로도 기록해 둔다 — 다음 프레임 [update] 가 같은 텍스트를 보고
+     * 그냥 넘어가서, 방금 받은 목록(및 선택 위치)이 안 날아가고 계속 Tab 으로 순환된다.
+     * [baseText] 자체는 안 바꾼다 — 다음 Tab 도 같은 원본 기준으로 다시 적용해야 하기 때문.
      */
-    fun applySelected(currentText: String): String? {
-        if (matches.isEmpty() || !currentText.startsWith("/")) return null
+    fun applySelected(): String? {
+        val base = baseText ?: return null
+        if (matches.isEmpty() || !base.startsWith("/")) return null
         val suggestion = matches[selected]
-        val applied = "/" + suggestion.apply(currentText.substring(1))
+        val applied = "/" + suggestion.apply(base.substring(1))
         lastText = applied
         return applied
     }
@@ -93,21 +107,25 @@ class CommandSuggestions(private val textRenderer: TextRenderer) {
         closed = true
     }
 
-    fun mouseClicked(mouseX: Double, mouseY: Double, currentText: String, onApply: (String) -> Unit): Boolean {
+    fun mouseClicked(mouseX: Double, mouseY: Double, onApply: (String) -> Unit): Boolean {
         val box = lastBox ?: return false
         if (mouseX < box.x1 || mouseX > box.x2 || mouseY < box.y1 || mouseY > box.y2) return false
         val row = ((mouseY - box.y1) / box.rowHeight).toInt()
         if (row in 0 until box.rowCount) {
             selected = (windowStart + row).coerceIn(0, matches.lastIndex)
-            applySelected(currentText)?.let(onApply)
+            applySelected()?.let(onApply)
         }
         return true
     }
 
-    /** 입력창 바로 위, 아래쪽 끝이 `inputY - 2` 에 오도록 위로 펼쳐 그린다. */
+    /**
+     * 입력창 바로 위, 아래쪽 끝이 `inputY - 2` 에 오도록 위로 펼쳐 그린다.
+     * 채팅 본문(0.8배)보다도 한 단계 더 작게(0.7배) 그린다 — 후보가 여러 줄이라
+     * 본문과 같은 크기로 그리면 화면을 너무 많이 차지한다.
+     */
     fun render(context: DrawContext, inputX: Int, inputY: Int, inputWidth: Int) {
         if (!isOpen) return
-        val rowHeight = ChatUiScale.LINE_HEIGHT + 2
+        val rowHeight = ROW_HEIGHT
         val visibleCount = matches.size.coerceAtMost(MAX_ROWS)
         val boxHeight = visibleCount * rowHeight + 4
         val boxY = inputY - boxHeight - 2
@@ -129,7 +147,7 @@ class CommandSuggestions(private val textRenderer: TextRenderer) {
                 context.fill(boxX + 1, y - 1, boxX + boxWidth - 1, y - 1 + rowHeight, 0x40FFFFFF)
             }
             val color = if (isSelected) 0xFFFF55 else 0xCCCCCC
-            TextRenderUtil.drawScaled(context, textRenderer, Text.literal(suggestion.text), boxX + 4, y, color)
+            TextRenderUtil.drawScaled(context, textRenderer, Text.literal(suggestion.text), boxX + 4, y, color, ROW_SCALE)
             y += rowHeight
         }
         context.disableScissor()
@@ -138,6 +156,8 @@ class CommandSuggestions(private val textRenderer: TextRenderer) {
     }
 
     companion object {
-        private const val MAX_ROWS = 8
+        private const val MAX_ROWS = 6
+        private const val ROW_SCALE = 0.7f
+        private const val ROW_HEIGHT = 7
     }
 }

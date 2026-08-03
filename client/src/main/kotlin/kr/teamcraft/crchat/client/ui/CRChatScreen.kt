@@ -7,9 +7,7 @@ import kr.teamcraft.crchat.client.state.ChatState
 import kr.teamcraft.crchat.client.state.OverlayPanel
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
-import net.minecraft.client.gui.screen.ChatInputSuggestor
 import net.minecraft.client.gui.screen.Screen
-import net.minecraft.client.gui.widget.TextFieldWidget
 import net.minecraft.text.OrderedText
 import net.minecraft.text.Text
 import org.lwjgl.glfw.GLFW
@@ -28,21 +26,8 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
 
     private lateinit var input: CRChatInputField
 
-    /**
-     * 명령어 자동완성 (탭 눌러 서버 플러그인 명령어까지 뜨는 그거)은 바닐라
-     * `ChatInputSuggestor` 를 그대로 재사용한다 — 클라가 접속 시 서버로부터
-     * 받는 브리가디어 명령 트리(권한으로 이미 필터링됨)를 그대로 물어보는 방식이라,
-     * 우리가 직접 명령어 목록을 관리할 필요 없이 서버에 설치된 플러그인 명령어까지
-     * 전부 자동으로 나온다 — 바닐라 채팅에서 보이던 것과 동일하다.
-     *
-     * `ChatInputSuggestor` 는 실제 `TextFieldWidget` 을 직접 들여다보고 조작한다
-     * (텍스트·커서 읽기, Tab 자동완성 시 텍스트 자체를 새로 씀) — 그래서 우리 자체
-     * 한글 조합 입력창([CRChatInputField])과 별개로, 절대 화면에 그리지 않는
-     * "그림자" 필드 하나를 만들어 매 프레임 우리 입력창 내용과 맞춰준다.
-     */
-    private lateinit var suggestionField: TextFieldWidget
-    private lateinit var commandSuggestor: ChatInputSuggestor
-    private var lastSyncedText: String? = null
+    /** 명령어("/") 자동완성 — [CommandSuggestions] 참조. */
+    private lateinit var commandSuggestions: CommandSuggestions
 
     private val tabBarHeight = ChatUiScale.TAB_BAR_HEIGHT
     private val lineHeight = ChatUiScale.LINE_HEIGHT
@@ -69,47 +54,8 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
         input = CRChatInputField(textRenderer, main.x, main.y + main.height + 4, main.width, inputHeight)
         input.text = initialText
 
-        // 인자 순서는 바닐라 ChatScreen.init() 이 쓰는 값 그대로다(진짜 명령 트리·구문
-        // 강조·에러 메시지까지 동일하게 나오게 하려고 일부러 안 바꿨다):
-        // slashOptional=false(반드시 "/"로 시작해야 명령으로 봄), suggestingWhenEmpty=false,
-        // inWindowIndexOffset=1, maxSuggestionSize=10, chatScreenSized=true, color=-805306368.
-        suggestionField = TextFieldWidget(textRenderer, main.x, main.y + main.height + 4, main.width, inputHeight, Text.empty())
-        suggestionField.text = initialText
-        commandSuggestor = ChatInputSuggestor(
-            MinecraftClient.getInstance(), this, suggestionField, textRenderer,
-            false, false, 1, 10, true, -805306368,
-        )
-        // 바닐라는 여기서 canLeave=false 로 둬서, 창을 닫아도 Tab 을 누르면 항상 다시 뜬다.
-        commandSuggestor.setCanLeave(false)
-        setFocused(suggestionField)
-        lastSyncedText = null
-        commandSuggestor.refresh()
-    }
-
-    /**
-     * `input` 의 실제 텍스트(한글 조합 포함)가 바뀔 때마다 그림자 필드에 그대로
-     * 옮기고 자동완성을 다시 계산한다. 매 프레임 [render] 에서 부르지만, 텍스트가
-     * 그대로면 아무 일도 안 하므로 비용은 없다.
-     */
-    private fun syncSuggestorText() {
-        val text = input.text
-        if (text == lastSyncedText) return
-        lastSyncedText = text
-        suggestionField.text = text
-        suggestionField.setCursorToEnd(false)
-        // 바닐라와 동일: 화면을 처음 열었을 때 받은 값(예: "/" 프리필)에서 안 바뀌었으면
-        // 굳이 자동완성 창을 안 띄운다.
-        commandSuggestor.setWindowActive(text != initialText)
-        commandSuggestor.refresh()
-    }
-
-    /** Tab 자동완성처럼 그림자 필드 쪽에서 텍스트를 직접 바꿨을 때, 우리 입력창에 반영한다. */
-    private fun syncFromSuggestor() {
-        val newText = suggestionField.text
-        if (newText == input.text) return
-        input.text = newText
-        lastSyncedText = newText
-        commandSuggestor.refresh()
+        commandSuggestions = CommandSuggestions(textRenderer)
+        commandSuggestions.update(initialText)
     }
 
     // 배경 흐림·어둡게 효과를 끈다 — 평소 오버레이와 이질감이 없도록.
@@ -122,9 +68,6 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
         input.x = main.x
         input.y = main.y + main.height + 4
         input.width = main.width
-        suggestionField.setX(main.x)
-        suggestionField.setY(main.y + main.height + 4)
-        suggestionField.setWidth(main.width)
 
         for (panel in ChatOverlayState.panels) {
             renderPanel(context, panel, mouseX, mouseY)
@@ -133,11 +76,11 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
 
         super.render(context, mouseX, mouseY, delta)
 
-        syncSuggestorText()
-        // 다른 요소들 위에 그려져야 하므로 z 를 살짝 띄운다 — 바닐라 ChatScreen 도 이렇게 한다.
+        commandSuggestions.update(input.text)
+        // 입력창 바로 위, 다른 요소들 위에 그려져야 하므로 z 를 살짝 띄운다.
         context.matrices.push()
         context.matrices.translate(0f, 0f, 200f)
-        commandSuggestor.render(context, mouseX, mouseY)
+        commandSuggestions.render(context, input.x, input.y, input.width)
         context.matrices.pop()
     }
 
@@ -241,7 +184,6 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
-        if (commandSuggestor.mouseScrolled(verticalAmount.coerceIn(-1.0, 1.0))) return true
         for (panel in ChatOverlayState.panels) {
             if (mouseX >= panel.x && mouseX <= panel.x + panel.width && mouseY >= panel.y && mouseY <= panel.y + panel.height) {
                 val lineCount = visibleLines(panel).size
@@ -255,10 +197,7 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
     }
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
-        if (commandSuggestor.mouseClicked(mouseX, mouseY, button)) {
-            syncFromSuggestor()
-            return true
-        }
+        if (commandSuggestions.mouseClicked(mouseX, mouseY, input.text) { input.text = it }) return true
 
         // 크기 조절 손잡이가 최우선이다 (다른 영역과 겹쳐도 항상 잡을 수 있어야 함)
         for (panel in ChatOverlayState.panels) {
@@ -353,12 +292,30 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
     }
 
     override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
-        // 자동완성 창이 열려 있으면 위/아래/Tab/Enter/Esc 는 전부 그쪽이 먼저 가져간다
-        // (제안 목록 넘기기·선택). 닫혀 있을 때는 Tab 만 소비하고(다시 염) 나머지는 그대로
-        // 흘려보낸다 — 바닐라 ChatScreen 의 순서와 같다.
-        if (commandSuggestor.keyPressed(keyCode, scanCode, modifiers)) {
-            syncFromSuggestor()
-            return true
+        // 자동완성 목록이 떠 있으면 Tab/위/아래/Esc 는 전부 그쪽이 먼저 가져간다 — 안 그러면
+        // 위/아래가 채팅 히스토리랑 겹쳐서 뭘 눌러도 목록을 못 넘긴다.
+        if (commandSuggestions.isOpen) {
+            when (keyCode) {
+                GLFW.GLFW_KEY_TAB -> {
+                    commandSuggestions.cycle(forward = (modifiers and GLFW.GLFW_MOD_SHIFT) == 0)
+                    commandSuggestions.applySelected(input.text)?.let { input.text = it }
+                    return true
+                }
+                GLFW.GLFW_KEY_UP -> {
+                    commandSuggestions.cycle(forward = false)
+                    commandSuggestions.applySelected(input.text)?.let { input.text = it }
+                    return true
+                }
+                GLFW.GLFW_KEY_DOWN -> {
+                    commandSuggestions.cycle(forward = true)
+                    commandSuggestions.applySelected(input.text)?.let { input.text = it }
+                    return true
+                }
+                GLFW.GLFW_KEY_ESCAPE -> {
+                    commandSuggestions.close()
+                    return true
+                }
+            }
         }
         if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
             submit()

@@ -3,9 +3,13 @@ package kr.teamcraft.crchat.client.ui
 import kr.teamcraft.crchat.client.state.ChatState
 import kr.teamcraft.crchat.protocol.ChatMessage
 import kr.teamcraft.crchat.protocol.Segment
+import net.minecraft.client.font.TextRenderer
 import net.minecraft.text.MutableText
+import net.minecraft.text.OrderedText
+import net.minecraft.text.Style
 import net.minecraft.text.Text
 import net.minecraft.text.TextColor
+import net.minecraft.util.Language
 
 /**
  * 상시 오버레이([ChatOverlayRenderer])와 편집 화면([CRChatScreen])이
@@ -39,6 +43,22 @@ object ChatLineFormatter {
      */
     fun expand(message: ChatMessage): List<Text?> =
         if (message.channel == "notice") listOf(null, format(message), null) else listOf(format(message))
+
+    /**
+     * [expand] 의 각 줄을 패널 폭에 맞춰 자동 줄넘김한 실제 렌더 줄 목록으로 바꾼다.
+     * 이게 없으면 패널을 좌우로 좁게 줄였을 때 글자가 배경 밖으로 그대로 삐져나온다
+     * (세로 크기 조절은 보이는 줄 수만 바뀌니 문제가 없었지만, 가로는 원래 줄바꿈이 없었다).
+     *
+     * `maxWidth` 는 [ChatUiScale.wrapWidth] 로 계산한, 스케일 적용 전 좌표계 폭이어야 한다.
+     */
+    fun wrappedLinesFor(textRenderer: TextRenderer, message: ChatMessage, maxWidth: Int): List<OrderedText?> =
+        expand(message).flatMap { line ->
+            if (line == null) listOf(null) else wrap(textRenderer, line, maxWidth)
+        }
+
+    private fun wrap(textRenderer: TextRenderer, text: Text, maxWidth: Int): List<OrderedText> =
+        textRenderer.textHandler.wrapLines(text, maxWidth, Style.EMPTY)
+            .map { Language.getInstance().reorder(it) }
 
     private fun messageColor(message: ChatMessage): String? =
         message.segments.filterIsInstance<Segment.Text>().firstOrNull()?.color

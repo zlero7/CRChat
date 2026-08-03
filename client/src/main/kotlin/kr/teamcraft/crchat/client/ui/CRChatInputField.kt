@@ -102,6 +102,9 @@ class CRChatInputField(
 
         val textX = x + 21
         val display = text
+
+        // 입력창을 가로로 좁게 줄였을 때 긴 문장이 테두리 밖으로 삐져나오지 않도록 자른다.
+        context.enableScissor(textX, y, x + width - 2, y + height)
         TextRenderUtil.drawScaled(context, textRenderer, net.minecraft.text.Text.literal(display), textX, y + 3, textColor)
 
         if (composer.isComposing) {
@@ -118,6 +121,7 @@ class CRChatInputField(
                 0xFFFFFFFF.toInt(),
             )
         }
+        context.disableScissor()
     }
 
     /** @return 이 키를 소비했으면 true. false 면 [CRChatScreen] 이 다른 처리(ESC 등)로 넘겨야 한다. */

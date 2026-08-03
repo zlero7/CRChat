@@ -1,12 +1,14 @@
 package kr.teamcraft.crchat.client.ui
 
 import kr.teamcraft.crchat.client.network.CRChatNetworking
+import kr.teamcraft.crchat.client.state.ChatHistory
 import kr.teamcraft.crchat.client.state.ChatOverlayState
 import kr.teamcraft.crchat.client.state.ChatState
 import kr.teamcraft.crchat.client.state.OverlayPanel
 import net.minecraft.client.MinecraftClient
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
+import net.minecraft.text.OrderedText
 import net.minecraft.text.Text
 import org.lwjgl.glfw.GLFW
 
@@ -121,12 +123,17 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
     private fun filterChannelId(panel: OverlayPanel): String? =
         if (panel === ChatOverlayState.main) ChatOverlayState.activeTab.channelId else panel.tab?.channelId
 
-    /** 메시지가 아니라 **렌더 줄** 목록. 공지는 메시지 하나가 3줄(빈 줄 포함)이 된다. */
-    private fun visibleLines(panel: OverlayPanel): List<Text?> {
+    /**
+     * 메시지가 아니라 **렌더 줄** 목록. 공지는 메시지 하나가 3줄(빈 줄 포함)이 된다.
+     * 패널 폭에 맞춰 자동 줄넘김까지 끝낸 상태다 — 그래서 가로로 좁게 줄여도
+     * 글자가 배경 밖으로 삐져나오지 않는다.
+     */
+    private fun visibleLines(panel: OverlayPanel): List<OrderedText?> {
         val channelId = filterChannelId(panel)
+        val maxWidth = ChatUiScale.wrapWidth(panel.width)
         return ChatState.messages
             .filter { channelId == null || it.channel == channelId }
-            .flatMap { ChatLineFormatter.expand(it) }
+            .flatMap { ChatLineFormatter.wrappedLinesFor(textRenderer, it, maxWidth) }
     }
 
     private fun renderMessages(context: DrawContext, panel: OverlayPanel) {
@@ -139,6 +146,9 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
         val startIndex = (endExclusive - maxLines).coerceAtLeast(0)
         val visible = lines.subList(startIndex, endExclusive.coerceAtLeast(startIndex))
 
+        // 자동 줄넘김만으로는 못 끊는 긴 토큰(URL 등)까지 대비해, 그려질 영역 밖으로는
+        // 아예 안 나가도록 한 번 더 잘라낸다.
+        context.enableScissor(panel.x, panel.y + tabBarHeight, panel.x + panel.width, panel.y + panel.height)
         var y = panel.y + panel.height - lineHeight
         for (line in visible.asReversed()) {
             if (line != null) {
@@ -147,6 +157,7 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
             y -= lineHeight
             if (y < panel.y + tabBarHeight) break
         }
+        context.disableScissor()
 
         if (lines.size > maxLines) {
             val trackTop = panel.y + tabBarHeight
@@ -270,6 +281,17 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
             submit()
             return true
         }
+        // 바닐라 채팅처럼 위/아래로 이전에 보낸 메시지를 그대로 불러온다 (A.7 계획엔
+        // 없었지만 사용자 요청으로 추가). 조합 중이던 글자는 history 로 덮어써도 되니
+        // composer 상태 리셋은 input.text setter 에 맡긴다.
+        if (keyCode == GLFW.GLFW_KEY_UP) {
+            ChatHistory.previous(input.text)?.let { input.text = it }
+            return true
+        }
+        if (keyCode == GLFW.GLFW_KEY_DOWN) {
+            ChatHistory.next()?.let { input.text = it }
+            return true
+        }
         if (input.keyPressed(keyCode, scanCode, modifiers)) return true
         return super.keyPressed(keyCode, scanCode, modifiers)
     }
@@ -283,6 +305,7 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
     private fun submit() {
         val text = input.text
         if (text.isNotBlank()) {
+            ChatHistory.record(text)
             if (text.startsWith("/")) {
                 MinecraftClient.getInstance().player?.networkHandler?.sendChatCommand(text.removePrefix("/"))
             } else {

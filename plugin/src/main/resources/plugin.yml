@@ -10,3 +10,18 @@ commands:
     description: 전 서버 공지 (공지 탭으로 간다, 4.1)
     usage: /공지 <내용>
     permission: crchat.admin.notice
+
+# channels.yml 의 permission 노드들을 여기서 등록하지 않으면 Bukkit 기본값(default: op)이
+# 적용돼서 op 만 채팅을 보낼 수 있게 된다 — 실제로 이 버그가 있었다. 일반 유저도 쓰는
+# 채널은 전부 default: true 로 등록한다.
+permissions:
+  crchat.channel.global:
+    default: true
+  crchat.channel.general:
+    default: true
+  crchat.channel.guild:
+    default: true
+  crchat.channel.party:
+    default: true
+  crchat.admin.notice:
+    default: op

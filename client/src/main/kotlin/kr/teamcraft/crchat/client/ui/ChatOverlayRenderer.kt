@@ -31,10 +31,12 @@ object ChatOverlayRenderer {
         for (panel in ChatOverlayState.panels) {
             val channelId = if (panel === ChatOverlayState.main) ChatOverlayState.activeTab.channelId else panel.tab?.channelId
             val filtered = ChatState.messages.filter { channelId == null || it.channel == channelId }
-            val lines = filtered.flatMap { ChatLineFormatter.expand(it) }
+            val maxWidth = ChatUiScale.wrapWidth(panel.width)
+            val lines = filtered.flatMap { ChatLineFormatter.wrappedLinesFor(client.textRenderer, it, maxWidth) }
             val maxLines = panel.height / LINE_HEIGHT
             val visible = lines.takeLast(maxLines)
 
+            context.enableScissor(panel.x, panel.y, panel.x + panel.width, panel.y + panel.height)
             var y = panel.y + panel.height - LINE_HEIGHT
             for (line in visible.asReversed()) {
                 if (line != null) {
@@ -43,6 +45,7 @@ object ChatOverlayRenderer {
                 y -= LINE_HEIGHT
                 if (y < panel.y) break
             }
+            context.disableScissor()
         }
     }
 }

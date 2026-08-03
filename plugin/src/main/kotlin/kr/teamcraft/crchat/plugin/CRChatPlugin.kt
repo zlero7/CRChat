@@ -100,15 +100,19 @@ class CRChatPlugin : JavaPlugin(), Listener, PluginMessageListener, CommandExecu
      */
     private fun setUpNetwork() {
         if (!networkConfig.networkEnabled) return
-        val db = ChatRelayDatabase(networkConfig)
+        // HikariDataSource 생성자 자체가 즉시 접속을 시도한다(fail-fast) — DB가 하나도
+        // 안 떠 있으면 여기서부터 예외가 난다. 실제로 이 예외가 try 밖에 있어서
+        // onEnable() 전체가 죽고 플러그인이 통째로 안 켜지는 버그가 있었다.
         try {
+            val db = ChatRelayDatabase(networkConfig)
             db.ensureSchema()
             relayDb = db
             chatRelay = ChatRelay(this, db, networkConfig, ::onRelayedMessage).also { it.start() }
             logger.info("크로스서버 채팅 연동 활성화 (MySQL)")
         } catch (e: Exception) {
             logger.warning("크로스서버 채팅 연동 초기화 실패 — 로컬 전달만 사용합니다: ${e.message}")
-            db.close()
+            relayDb?.close()
+            relayDb = null
         }
     }
 

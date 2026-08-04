@@ -38,7 +38,7 @@ import org.slf4j.LoggerFactory
  * 우측 Alt 는 처음엔 게임에 keyCode 자체가 안 들어와서 포기했었는데(Windows 가 언어
  * 전환 단축키로 먼저 가로챔), [ImeDetacher] 로 게임 창의 OS IME 연결을 아예 떼어내면
  * 더 이상 안 가로채인다는 걸 KoreanPatch 모드 분석으로 알아내서 다시 살렸다 — 이제
- * 우측 Ctrl·우측 Alt 둘 다 전환 키로 쓸 수 있다([kr.teamcraft.crchat.client.ui.CRChatInputField]).
+ * 유일한 전환 키다([kr.teamcraft.crchat.client.ui.CRChatInputField], 우측 Ctrl 은 뺐다).
  */
 class CRChatClientMod : ClientModInitializer {
 
@@ -66,7 +66,7 @@ class CRChatClientMod : ClientModInitializer {
 
         // 최초 1회 안내 (부록 A.9) — 물리 한/영 키를 누르면 OS IME 가 켜져서 이중 입력이
         // 난다. 켜기 전에 미리 알려준다.
-        ChatState.addVanillaMessage("한/영 전환은 우측 Ctrl 또는 우측 Alt 를 쓰세요. OS 입력기(한/영 키)를 켜면 한글이 이중으로 조합됩니다.")
+        ChatState.addVanillaMessage("한/영 전환은 우측 Alt 를 쓰세요. OS 입력기(한/영 키)를 켜면 한글이 이중으로 조합됩니다.")
 
         logger.info("CRChat 클라이언트 초기화 (protocol v{})", PROTOCOL_VERSION)
     }

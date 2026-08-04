@@ -27,7 +27,8 @@ import org.lwjgl.glfw.GLFW
  * 조합 중이던 글자를 확정한다 — 이게 없으면 커서를 옮긴 뒤에도 엉뚱한 자리에서
  * 조합이 이어져 글자가 깨진다.
  *
- * 한/영 전환 키는 **우측 Ctrl·우측 Alt**다.
+ * 한/영 전환 키는 **우측 Alt 뿐**이다(우측 Ctrl 은 뺐다 — Alt 하나로 충분하고, 다른
+ * Ctrl 조합(Ctrl+A 등)과 헷갈리지 않는 편이 낫다).
  * - 실제 물리 한/영 키는 일부러 안 잡는다 — 그 키는 Windows 자체의 IME 를 통째로
  *   전환하는 시스템 키라, 눌리는 순간부터 타이핑이 OS 한글 입력기를 거쳐 넘어오고
  *   우리 조합기는 그걸 이중 입력으로 보고 버린다(A.9) — "OS 전환은 되는데 채팅이
@@ -319,11 +320,25 @@ class CRChatInputField(
 
         val textX = x + textLeftMargin
         val relX = ((mouseX - textX) / ChatUiScale.TEXT_SCALE).toInt().coerceAtLeast(0)
-        val column = textRenderer.textHandler.getTrimmedLength(lineStr, relX, Style.EMPTY)
+        val column = nearestColumn(lineStr, relX)
 
         val target = (ranges.getOrNull(lineIndex)?.start ?: 0) + column
         moveCursorTo(target, extendSelection = false)
         return true
+    }
+
+    /**
+     * [getTrimmedLength] 는 "이 폭 안에 완전히 들어가는 글자 수"만 준다 — 즉 항상
+     * 내림(floor) 이라, 글자 폭의 뒤쪽 절반을 클릭해도 그 글자 앞으로 커서가 간다.
+     * 실제로 이게 클릭 정확도가 낮다는 문제의 원인이었다 — 클릭한 지점과 가장 가까운
+     * 글자 "경계"로 스냅하도록 한 글자 더 볼지 비교한다(일반적인 텍스트 편집기 동작).
+     */
+    private fun nearestColumn(lineStr: String, relX: Int): Int {
+        val floorCount = textRenderer.textHandler.getTrimmedLength(lineStr, relX, Style.EMPTY).coerceIn(0, lineStr.length)
+        if (floorCount >= lineStr.length) return floorCount
+        val floorWidth = textRenderer.getWidth(lineStr.substring(0, floorCount))
+        val nextCharWidth = textRenderer.getWidth(lineStr.substring(floorCount, floorCount + 1))
+        return if (relX - floorWidth > nextCharWidth / 2f) floorCount + 1 else floorCount
     }
 
     /** @return 이 키를 소비했으면 true. false 면 [CRChatScreen] 이 다른 처리(ESC 등)로 넘겨야 한다. */
@@ -411,11 +426,11 @@ class CRChatInputField(
                 return true
             }
 
-            // 한/영 전환 키 — 우측 Ctrl·우측 Alt 둘 다 된다. 클래스 문서 참조:
-            // 우측 Alt 는 [kr.teamcraft.crchat.client.win.ImeDetacher] 가 게임 창의 OS IME
-            // 연결을 떼어낸 덕에 다시 살렸다 — 그 전까진 Windows 가 언어 전환 단축키로
-            // 먼저 가로채서 keyCode 자체가 게임에 안 들어왔었다.
-            GLFW.GLFW_KEY_RIGHT_CONTROL, GLFW.GLFW_KEY_RIGHT_ALT -> {
+            // 유일한 한/영 전환 키. 클래스 문서 참조 — [kr.teamcraft.crchat.client.win.ImeDetacher]
+            // 가 게임 창의 OS IME 연결을 떼어낸 덕에 우측 Alt 를 쓸 수 있게 됐다. 우측 Ctrl 은
+            // 이제 안 쓴다(우측 Alt 하나로 충분해서 뺐다) — 다른 Ctrl 조합(Ctrl+A 등)과 안
+            // 헷갈리게, 우측 Ctrl 도 좌측 Ctrl 과 똑같이 그냥 보조키로만 취급된다.
+            GLFW.GLFW_KEY_RIGHT_ALT -> {
                 toggleHangulMode()
                 return true
             }

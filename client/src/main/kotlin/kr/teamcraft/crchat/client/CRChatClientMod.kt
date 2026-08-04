@@ -5,8 +5,10 @@ import kr.teamcraft.crchat.client.network.CRChatNetworking
 import kr.teamcraft.crchat.client.state.ChatState
 import kr.teamcraft.crchat.client.ui.ChatOverlayRenderer
 import kr.teamcraft.crchat.client.ui.CRChatScreen
+import kr.teamcraft.crchat.client.win.ImeDetacher
 import kr.teamcraft.crchat.protocol.PROTOCOL_VERSION
 import net.fabricmc.api.ClientModInitializer
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents
 import net.minecraft.client.gui.screen.ChatScreen
@@ -31,8 +33,12 @@ import org.slf4j.LoggerFactory
  * 전환**하는 시스템 키다 — OS 가 한글 IME 로 바뀌면 그 뒤 타이핑은 OS 가 먼저 완성된
  * 한글로 조합해서 넘기는데, 우리 조합기는 그걸 이중 입력으로 보고 버린다(A.9) —
  * 그래서 "OS 전환은 되는데 채팅은 안 쳐지는" 증상이 났다. 해결책은 그 키를 쫓는 게
- * 아니라 **OS IME 는 항상 영문으로 두게 안내**하고, 우리 안의 전환은 우측 Ctrl 로만
- * 하는 것이다 (부록 A.9 가 원래 이렇게 하라고 되어 있었다).
+ * 아니라 **OS IME 는 항상 영문으로 두게 안내**하는 것이다.
+ *
+ * 우측 Alt 는 처음엔 게임에 keyCode 자체가 안 들어와서 포기했었는데(Windows 가 언어
+ * 전환 단축키로 먼저 가로챔), [ImeDetacher] 로 게임 창의 OS IME 연결을 아예 떼어내면
+ * 더 이상 안 가로채인다는 걸 KoreanPatch 모드 분석으로 알아내서 다시 살렸다 — 이제
+ * 우측 Ctrl·우측 Alt 둘 다 전환 키로 쓸 수 있다([kr.teamcraft.crchat.client.ui.CRChatInputField]).
  */
 class CRChatClientMod : ClientModInitializer {
 
@@ -40,6 +46,10 @@ class CRChatClientMod : ClientModInitializer {
 
     override fun onInitializeClient() {
         CRChatNetworking.register()
+
+        // 창(HWND)이 확실히 준비된 뒤에 떼어내야 한다 — onInitializeClient() 시점엔
+        // 아직 없을 수 있다(다른 곳에서도 이미 이런 이유로 CLIENT_STARTED 를 쓴다).
+        ClientLifecycleEvents.CLIENT_STARTED.register { ImeDetacher.detachIfWindows() }
 
         HudRenderCallback.EVENT.register { context, _ -> ChatOverlayRenderer.render(context) }
 
@@ -56,7 +66,7 @@ class CRChatClientMod : ClientModInitializer {
 
         // 최초 1회 안내 (부록 A.9) — 물리 한/영 키를 누르면 OS IME 가 켜져서 이중 입력이
         // 난다. 켜기 전에 미리 알려준다.
-        ChatState.addVanillaMessage("한/영 전환은 우측 Ctrl 을 쓰세요. OS 입력기(한/영 키)를 켜면 한글이 이중으로 조합됩니다.")
+        ChatState.addVanillaMessage("한/영 전환은 우측 Ctrl 또는 우측 Alt 를 쓰세요. OS 입력기(한/영 키)를 켜면 한글이 이중으로 조합됩니다.")
 
         logger.info("CRChat 클라이언트 초기화 (protocol v{})", PROTOCOL_VERSION)
     }

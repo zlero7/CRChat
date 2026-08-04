@@ -35,6 +35,11 @@ dependencies {
     include(implementation(project(":protocol"))!!)
     // 자체 한글 조합기(HangulComposer, Dubeolsik) — 부록 A. 입력창에서 직접 쓴다.
     include(implementation(project(":common"))!!)
+
+    // 우측 Alt 한/영 전환(부록 A.9 참고 — ImmAssociateContext 로 게임 창의 OS IME 연결을
+    // 끊어야 Windows 가 그 키를 언어 전환 단축키로 가로채지 않는다). JNA 로 imm32.dll 을
+    // 직접 호출한다 — 네이티브 DLL을 우리가 새로 컴파일할 필요가 없다.
+    include(implementation("net.java.dev.jna:jna:5.14.0")!!)
 }
 
 tasks.processResources {

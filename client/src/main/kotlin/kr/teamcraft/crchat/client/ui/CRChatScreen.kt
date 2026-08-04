@@ -46,7 +46,7 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
     private var dragStartHeight = 0
 
     override fun init() {
-        ChatOverlayState.ensureDefaultPosition(height)
+        ChatOverlayState.ensureDefaultPosition(width, height)
         // 열 때마다 최신 줄이 보이도록 스크롤을 초기화한다 (바닐라 ChatScreen 도 이렇게 동작한다).
         for (panel in ChatOverlayState.panels) panel.scrollOffset = 0
 
@@ -64,6 +64,9 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
     }
 
     override fun render(context: DrawContext, mouseX: Int, mouseY: Int, delta: Float) {
+        // GUI Scale 을 바꾸거나 창 크기를 바꿔도 패널이 화면 밖으로 나가지 않게 매 프레임 보정한다.
+        ChatOverlayState.clampToScreen(width, height)
+
         val main = ChatOverlayState.main
         input.x = main.x
         input.y = main.y + main.height + 4
@@ -238,6 +241,8 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
                 return true
             }
         }
+
+        if (input.mouseClicked(mouseX, mouseY)) return true
 
         return super.mouseClicked(mouseX, mouseY, button)
     }

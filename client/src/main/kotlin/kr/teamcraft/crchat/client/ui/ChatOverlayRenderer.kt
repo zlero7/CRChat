@@ -26,7 +26,9 @@ object ChatOverlayRenderer {
         val client = MinecraftClient.getInstance()
         if (client.currentScreen is CRChatScreen) return
 
-        ChatOverlayState.ensureDefaultPosition(client.window.scaledHeight)
+        ChatOverlayState.ensureDefaultPosition(client.window.scaledWidth, client.window.scaledHeight)
+        // GUI Scale 을 바꾸거나 창 크기를 바꿔도 패널이 화면 밖으로 나가지 않게 매 프레임 보정한다.
+        ChatOverlayState.clampToScreen(client.window.scaledWidth, client.window.scaledHeight)
 
         for (panel in ChatOverlayState.panels) {
             val channelId = if (panel === ChatOverlayState.main) ChatOverlayState.activeTab.channelId else panel.tab?.channelId

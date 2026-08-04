@@ -2,6 +2,8 @@ package kr.teamcraft.crchat.client.ui
 
 import kr.teamcraft.crchat.common.hangul.Dubeolsik
 import kr.teamcraft.crchat.common.hangul.HangulComposer
+import net.minecraft.client.MinecraftClient
+import net.minecraft.client.font.TextHandler
 import net.minecraft.client.font.TextRenderer
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.text.Style
@@ -17,18 +19,25 @@ import org.lwjgl.glfw.GLFW
  *
  * `ClickableWidget` 을 상속하지 않는다 — 이 화면엔 타이핑 대상이 이거 하나뿐이라
  * 포커스·선택 시스템이 필요 없고, [kr.teamcraft.crchat.client.ui.CRChatScreen] 이
- * 키·문자 이벤트를 직접 여기로 넘겨준다.
+ * 키·문자·클릭 이벤트를 직접 여기로 넘겨준다.
  *
- * 커서 이동·드래그 선택은 아직 없다 — 지금은 끝에서만 입력·삭제되는 1차 버전이다.
+ * 커서·선택은 항상 [buffer](확정된 텍스트) 기준으로만 움직인다 — 조합기는 "지금
+ * 커서 위치에서 계속 이어 친다"는 것만 알 뿐 커서가 다른 곳으로 튀는 상황은 모른다.
+ * 그래서 커서를 옮기는 동작(화살표·Home/End·Ctrl+A·클릭 등)은 전부 먼저 [flush] 로
+ * 조합 중이던 글자를 확정한다 — 이게 없으면 커서를 옮긴 뒤에도 엉뚱한 자리에서
+ * 조합이 이어져 글자가 깨진다.
  *
- * 한/영 전환 키는 **우측 Ctrl 뿐**이다.
+ * 한/영 전환 키는 **우측 Ctrl·우측 Alt**다.
  * - 실제 물리 한/영 키는 일부러 안 잡는다 — 그 키는 Windows 자체의 IME 를 통째로
  *   전환하는 시스템 키라, 눌리는 순간부터 타이핑이 OS 한글 입력기를 거쳐 넘어오고
  *   우리 조합기는 그걸 이중 입력으로 보고 버린다(A.9) — "OS 전환은 되는데 채팅이
  *   안 쳐지는" 증상의 원인이었다.
- * - 우측 Alt 도 시도했지만 로그로 확인해보니 `keyCode=346` 이 게임에 아예 안
- *   들어온다 — Windows 가 언어 전환 단축키 등으로 그 키 자체를 게임에 도달하기도
- *   전에 가로채는 것으로 보인다. 게임 안에서 손쓸 방법이 없어 포기했다.
+ * - 우측 Alt 는 한동안 포기했었다 — 로그로 확인해보니 `keyCode=346` 이 게임에 아예
+ *   안 들어왔기 때문이다(Windows 가 언어 전환 단축키로 먼저 가로챔). KoreanPatch
+ *   모드 분석으로 원인을 다시 찾았다 — [kr.teamcraft.crchat.client.win.ImeDetacher]
+ *   가 게임 창에서 OS IME 연결 자체를 떼어내면(`ImmAssociateContext(hwnd, NULL)`)
+ *   Windows 가 더 이상 그 키를 언어 전환용으로 안 가로채서, keyCode 가 정상적으로
+ *   게임까지 들어온다.
  */
 class CRChatInputField(
     private val textRenderer: TextRenderer,
@@ -40,6 +49,12 @@ class CRChatInputField(
 ) {
     private val composer = HangulComposer()
     private val buffer = StringBuilder()
+
+    /** 확정된 텍스트([buffer]) 안에서의 커서 위치. */
+    private var cursor = 0
+
+    /** 선택 시작점. [cursor] 와 같으면 선택 없음. Shift 없이 커서를 옮기면 여기도 같이 따라간다. */
+    private var selectionAnchor = 0
 
     /** 한/영 전환 상태. 기본은 한글 모드. */
     private var hangulMode = true
@@ -64,22 +79,33 @@ class CRChatInputField(
         GLFW.GLFW_KEY_CAPS_LOCK,
     )
 
-    /** 조합 중인 글자까지 포함한 현재 표시 텍스트. */
+    private val hasSelection: Boolean get() = selectionAnchor != cursor
+    private val selectionStart: Int get() = minOf(selectionAnchor, cursor)
+    private val selectionEnd: Int get() = maxOf(selectionAnchor, cursor)
+
+    /** 조합 중인 글자까지 포함한, 커서 위치에 조합 중인 글자가 끼워진 현재 표시 텍스트. */
     var text: String
-        get() = buffer.toString() + composer.preeditText()
+        get() {
+            val committed = buffer.toString()
+            return committed.substring(0, cursor) + composer.preeditText() + committed.substring(cursor)
+        }
         set(value) {
+            composer.reset()
             buffer.setLength(0)
             buffer.append(value.take(maxLength))
-            composer.reset()
+            cursor = buffer.length
+            selectionAnchor = cursor
         }
 
     /** Enter 로 전송하기 직전에 불러서 조합 중이던 글자까지 확정한다. */
     fun flush() {
-        composer.flush()?.let { appendToBuffer(it) }
+        composer.flush()?.let { insertAtCursor(it) }
     }
 
     fun clear() {
         buffer.setLength(0)
+        cursor = 0
+        selectionAnchor = 0
         composer.reset()
     }
 
@@ -88,6 +114,50 @@ class CRChatInputField(
         hangulMode = !hangulMode
     }
 
+    private fun insertAtCursor(s: String) {
+        if (buffer.length >= maxLength) return
+        val insertable = s.take(maxLength - buffer.length)
+        buffer.insert(cursor, insertable)
+        cursor += insertable.length
+        selectionAnchor = cursor
+    }
+
+    private fun deleteSelection() {
+        if (!hasSelection) return
+        buffer.delete(selectionStart, selectionEnd)
+        cursor = selectionStart
+        selectionAnchor = cursor
+    }
+
+    private fun moveCursorTo(index: Int, extendSelection: Boolean) {
+        cursor = index.coerceIn(0, buffer.length)
+        if (!extendSelection) selectionAnchor = cursor
+    }
+
+    private fun copySelection() {
+        if (!hasSelection) return
+        val window = MinecraftClient.getInstance().window ?: return
+        GLFW.glfwSetClipboardString(window.handle, buffer.substring(selectionStart, selectionEnd))
+    }
+
+    private fun cutSelection() {
+        if (!hasSelection) return
+        copySelection()
+        deleteSelection()
+    }
+
+    private fun pasteFromClipboard() {
+        val window = MinecraftClient.getInstance().window ?: return
+        val clip = GLFW.glfwGetClipboardString(window.handle) ?: return
+        // 한 줄짜리 입력창이라 개행은 공백으로 눌러 담는다.
+        val sanitized = clip.replace("\r\n", " ").replace('\n', ' ').replace('\r', ' ')
+        flush()
+        if (hasSelection) deleteSelection()
+        insertAtCursor(sanitized)
+    }
+
+    // ── 자동 줄넘김 + 오프셋 매핑 ──────────────────────────
+
     /** 한/영 표시(17px)+구분선 뒤, 오른쪽 여백을 뺀 실제 텍스트 시작 x. */
     private val textLeftMargin = 21
     private val textRightMargin = 4
@@ -95,24 +165,43 @@ class CRChatInputField(
     private fun wrapWidth(): Int =
         ChatUiScale.wrapWidth((width - textLeftMargin - textRightMargin).coerceAtLeast(20))
 
+    /** 줄 하나가 [display] 안에서 차지하는 [start, end) 구간. 커서·선택 좌표 계산에 쓴다. */
+    private data class LineRange(val start: Int, val end: Int)
+
     /**
-     * 자동 줄넘김된 순수 문자열 줄들. 가로로 좁힌 채 긴 문장을 치면 옆으로 삐져나오는 대신
-     * 메시지 영역([ChatLineFormatter.wrappedLinesFor])과 똑같이 줄이 나뉘어야 한다.
+     * [display] 를 자동 줄넘김한 각 줄의 원본 오프셋. 메시지 영역과 같은 폭 계산으로
+     * 줄이 나뉘지만, 이쪽은 원본 문자열 안에서의 [start, end) 구간까지 알아야 커서
+     * 깜빡임·선택 하이라이트를 정확한 줄·칸에 그릴 수 있다 — 그래서 문자열만 돌려주는
+     * 상위 레벨 `wrapLines` 대신 오프셋을 그대로 주는 하위 레벨 오버로드를 쓴다.
      */
-    private fun wrappedPlainLines(): List<String> {
-        val display = text
-        if (display.isEmpty()) return listOf("")
-        return textRenderer.textHandler.wrapLines(Text.literal(display), wrapWidth(), Style.EMPTY)
-            .map { it.string }
+    private fun wrappedLineRanges(display: String): List<LineRange> {
+        val ranges = mutableListOf<LineRange>()
+        textRenderer.textHandler.wrapLines(display, wrapWidth(), Style.EMPTY, false) { _, start, end ->
+            ranges += LineRange(start, end)
+        }
+        if (ranges.isEmpty()) ranges += LineRange(0, 0)
+        return ranges
+    }
+
+    /** [idx](display 문자열 안의 절대 위치)가 몇 번째 줄, 그 줄의 몇 번째 칸인지. */
+    private fun locate(ranges: List<LineRange>, idx: Int): Pair<Int, Int> {
+        for ((i, r) in ranges.withIndex()) {
+            if (idx < r.end || i == ranges.lastIndex) {
+                return i to (idx - r.start).coerceIn(0, r.end - r.start)
+            }
+        }
+        return 0 to 0
     }
 
     /** 줄 수에 맞춰 늘어난 실제 높이. [CRChatScreen] 이 배경·다음 요소 배치에 참조한다. */
     val renderHeight: Int
-        get() = (wrappedPlainLines().size * ChatUiScale.LINE_HEIGHT + 6).coerceAtLeast(minHeight)
+        get() = (wrappedLineRanges(text).size * ChatUiScale.LINE_HEIGHT + 6).coerceAtLeast(minHeight)
 
     fun render(context: DrawContext, textColor: Int) {
-        val lines = wrappedPlainLines()
-        val boxHeight = renderHeight
+        val display = text
+        val ranges = wrappedLineRanges(display)
+        val lines = ranges.map { display.substring(it.start, it.end) }
+        val boxHeight = (ranges.size * ChatUiScale.LINE_HEIGHT + 6).coerceAtLeast(minHeight)
 
         // 배경 + 테두리 — 이게 없으면 게임 화면과 안 구분돼서 입력창처럼 안 보인다.
         context.fill(x, y, x + width, y + boxHeight, 0xEE101018.toInt())
@@ -129,10 +218,16 @@ class CRChatInputField(
         context.fill(x + 17, y + 2, x + 18, y + boxHeight - 2, 0x44FFFFFF.toInt())
 
         val textX = x + textLeftMargin
+        val scale = ChatUiScale.TEXT_SCALE
 
         // 입력창을 가로로 좁게 줄였을 때도(자동 줄넘김이 못 끊는 긴 토큰 대비) 테두리
         // 밖으로 삐져나오지 않도록 한 번 더 잘라낸다.
         context.enableScissor(textX, y, x + width - 2, y + boxHeight)
+
+        if (hasSelection) {
+            drawSelectionHighlight(context, ranges, lines, textX, y, scale)
+        }
+
         var lineY = y + 3
         for (line in lines) {
             TextRenderUtil.drawScaled(context, textRenderer, Text.literal(line), textX, lineY, textColor)
@@ -140,26 +235,65 @@ class CRChatInputField(
         }
 
         if (composer.isComposing) {
-            drawComposingUnderline(context, lines, textX, y)
+            drawComposingUnderline(context, ranges, lines, textX, y)
+        } else if (!hasSelection && blinkOn()) {
+            drawCaret(context, ranges, lines, textX, y, scale)
         }
         context.disableScissor()
     }
 
+    /** 500ms 마다 깜빡인다. */
+    private fun blinkOn(): Boolean = (System.currentTimeMillis() / 500) % 2L == 0L
+
+    private fun drawCaret(context: DrawContext, ranges: List<LineRange>, lines: List<String>, textX: Int, boxY: Int, scale: Float) {
+        // 조합 중이 아닐 땐 preedit 가 없으니 display 상의 커서 위치는 [cursor] 그대로다.
+        val (lineIndex, column) = locate(ranges, cursor)
+        val lineStr = lines.getOrElse(lineIndex) { "" }
+        val prefixWidth = (textRenderer.getWidth(lineStr.substring(0, column.coerceIn(0, lineStr.length))) * scale).toInt()
+        val caretX = textX + prefixWidth
+        val caretY = boxY + 3 + lineIndex * ChatUiScale.LINE_HEIGHT
+        context.fill(caretX, caretY, caretX + 1, caretY + ChatUiScale.LINE_HEIGHT - 1, 0xFFFFFFFF.toInt())
+    }
+
+    private fun drawSelectionHighlight(
+        context: DrawContext,
+        ranges: List<LineRange>,
+        lines: List<String>,
+        textX: Int,
+        boxY: Int,
+        scale: Float,
+    ) {
+        val selStart = selectionStart
+        val selEnd = selectionEnd
+        for ((i, range) in ranges.withIndex()) {
+            val from = maxOf(range.start, selStart)
+            val to = minOf(range.end, selEnd)
+            if (from >= to) continue
+            val lineStr = lines[i]
+            val localFrom = (from - range.start).coerceIn(0, lineStr.length)
+            val localTo = (to - range.start).coerceIn(0, lineStr.length)
+            val x1 = textX + (textRenderer.getWidth(lineStr.substring(0, localFrom)) * scale).toInt()
+            val x2 = textX + (textRenderer.getWidth(lineStr.substring(0, localTo)) * scale).toInt()
+            val rowY = boxY + 3 + i * ChatUiScale.LINE_HEIGHT
+            context.fill(x1, rowY - 1, x2, rowY + ChatUiScale.LINE_HEIGHT - 1, 0x663399FF)
+        }
+    }
+
     /**
-     * 조합 중인 글자 밑에 밑줄을 긋는다 (A.8). 조합 중인 자모는 항상 전체 텍스트의
-     * 맨 끝에 붙으므로 — 자모 자체엔 공백이 없어 줄바꿈이 그 안에서 끊기는 일이
-     * 실질적으로 없다 — 마지막 줄의 접미사로만 찾으면 된다.
+     * 조합 중인 글자 밑에 밑줄을 긋는다 (A.8). 조합 중인 자모는 항상 커서 바로
+     * 뒤(=preedit 시작 지점)에 끼워지므로, 그 줄·칸만 찾으면 된다.
      */
-    private fun drawComposingUnderline(context: DrawContext, lines: List<String>, textX: Int, boxY: Int) {
-        val lastIndex = lines.lastIndex
-        val lastLine = lines[lastIndex]
+    private fun drawComposingUnderline(context: DrawContext, ranges: List<LineRange>, lines: List<String>, textX: Int, boxY: Int) {
         val preedit = composer.preeditText()
-        val splitAt = (lastLine.length - preedit.length).coerceAtLeast(0)
+        val (lineIndex, column) = locate(ranges, cursor)
+        val lineStr = lines.getOrElse(lineIndex) { "" }
+        val splitAt = column.coerceIn(0, lineStr.length)
+        val preeditEnd = (splitAt + preedit.length).coerceAtMost(lineStr.length)
 
         val scale = ChatUiScale.TEXT_SCALE
-        val prefixWidth = (textRenderer.getWidth(lastLine.substring(0, splitAt)) * scale).toInt()
-        val preeditWidth = (textRenderer.getWidth(lastLine.substring(splitAt)) * scale).toInt()
-        val underlineY = boxY + 3 + lastIndex * ChatUiScale.LINE_HEIGHT + (textRenderer.fontHeight * scale).toInt()
+        val prefixWidth = (textRenderer.getWidth(lineStr.substring(0, splitAt)) * scale).toInt()
+        val preeditWidth = (textRenderer.getWidth(lineStr.substring(splitAt, preeditEnd)) * scale).toInt()
+        val underlineY = boxY + 3 + lineIndex * ChatUiScale.LINE_HEIGHT + (textRenderer.fontHeight * scale).toInt()
         context.fill(
             textX + prefixWidth,
             underlineY,
@@ -169,33 +303,136 @@ class CRChatInputField(
         )
     }
 
+    /** @return 이 클릭을 소비했으면 true(입력창 영역 안). 클릭한 자리로 커서를 옮긴다. */
+    fun mouseClicked(mouseX: Double, mouseY: Double): Boolean {
+        val boxHeight = renderHeight
+        if (mouseX < x || mouseX > x + width || mouseY < y || mouseY > y + boxHeight) return false
+
+        flush()
+        val display = text
+        val ranges = wrappedLineRanges(display)
+        val lines = ranges.map { display.substring(it.start, it.end) }
+
+        val relY = (mouseY - y - 3).toInt()
+        val lineIndex = (relY / ChatUiScale.LINE_HEIGHT).coerceIn(0, (lines.size - 1).coerceAtLeast(0))
+        val lineStr = lines.getOrElse(lineIndex) { "" }
+
+        val textX = x + textLeftMargin
+        val relX = ((mouseX - textX) / ChatUiScale.TEXT_SCALE).toInt().coerceAtLeast(0)
+        val column = textRenderer.textHandler.getTrimmedLength(lineStr, relX, Style.EMPTY)
+
+        val target = (ranges.getOrNull(lineIndex)?.start ?: 0) + column
+        moveCursorTo(target, extendSelection = false)
+        return true
+    }
+
     /** @return 이 키를 소비했으면 true. false 면 [CRChatScreen] 이 다른 처리(ESC 등)로 넘겨야 한다. */
     fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
+        val ctrl = (modifiers and GLFW.GLFW_MOD_CONTROL) != 0
+        val shift = (modifiers and GLFW.GLFW_MOD_SHIFT) != 0
+
         when (keyCode) {
             GLFW.GLFW_KEY_BACKSPACE -> {
-                if (!composer.backspace() && buffer.isNotEmpty()) {
-                    buffer.deleteCharAt(buffer.length - 1)
+                if (hasSelection) {
+                    deleteSelection()
+                } else if (!composer.backspace() && cursor > 0) {
+                    buffer.deleteCharAt(cursor - 1)
+                    cursor--
+                    selectionAnchor = cursor
                 }
                 suppressNextChar = false
                 return true
             }
 
-            // 유일한 한/영 전환 키. 클래스 문서 참조 — 우측 Alt·물리 한/영 키는
-            // Windows 가 게임에 도달하기도 전에 가로채서 코드로 손쓸 수 없었다.
-            GLFW.GLFW_KEY_RIGHT_CONTROL -> {
+            GLFW.GLFW_KEY_DELETE -> {
+                flush()
+                if (hasSelection) {
+                    deleteSelection()
+                } else if (cursor < buffer.length) {
+                    buffer.deleteCharAt(cursor)
+                }
+                return true
+            }
+
+            GLFW.GLFW_KEY_LEFT -> {
+                flush()
+                val target = if (ctrl) {
+                    TextHandler.moveCursorByWords(buffer.toString(), -1, cursor, true)
+                } else {
+                    cursor - 1
+                }
+                moveCursorTo(target, shift)
+                return true
+            }
+
+            GLFW.GLFW_KEY_RIGHT -> {
+                flush()
+                val target = if (ctrl) {
+                    TextHandler.moveCursorByWords(buffer.toString(), 1, cursor, true)
+                } else {
+                    cursor + 1
+                }
+                moveCursorTo(target, shift)
+                return true
+            }
+
+            GLFW.GLFW_KEY_HOME -> {
+                flush()
+                moveCursorTo(0, shift)
+                return true
+            }
+
+            GLFW.GLFW_KEY_END -> {
+                flush()
+                moveCursorTo(buffer.length, shift)
+                return true
+            }
+
+            GLFW.GLFW_KEY_A -> if (ctrl) {
+                flush()
+                selectionAnchor = 0
+                cursor = buffer.length
+                return true
+            }
+
+            GLFW.GLFW_KEY_C -> if (ctrl) {
+                copySelection()
+                return true
+            }
+
+            GLFW.GLFW_KEY_X -> if (ctrl) {
+                flush()
+                cutSelection()
+                return true
+            }
+
+            GLFW.GLFW_KEY_V -> if (ctrl) {
+                pasteFromClipboard()
+                return true
+            }
+
+            // 한/영 전환 키 — 우측 Ctrl·우측 Alt 둘 다 된다. 클래스 문서 참조:
+            // 우측 Alt 는 [kr.teamcraft.crchat.client.win.ImeDetacher] 가 게임 창의 OS IME
+            // 연결을 떼어낸 덕에 다시 살렸다 — 그 전까진 Windows 가 언어 전환 단축키로
+            // 먼저 가로채서 keyCode 자체가 게임에 안 들어왔었다.
+            GLFW.GLFW_KEY_RIGHT_CONTROL, GLFW.GLFW_KEY_RIGHT_ALT -> {
                 toggleHangulMode()
                 return true
             }
         }
 
+        // 여기까지 안 잡힌 다른 Ctrl+키 조합(Ctrl+S 등)은 자모로 조합하면 안 된다 —
+        // 그대로 흘려보낸다.
+        if (ctrl) return false
+
         // 보조키 자체의 keydown 은 조용히 흘려보낸다 — 조합 상태를 건드리면 안 된다.
         if (keyCode in MODIFIER_KEYS) return false
 
         if (hangulMode) {
-            val shift = (modifiers and GLFW.GLFW_MOD_SHIFT) != 0
             val jamo = Dubeolsik.jamoFor(keyCode, shift)
             if (jamo != null) {
-                composer.input(jamo)?.let { appendToBuffer(it) }
+                if (hasSelection) deleteSelection()
+                composer.input(jamo)?.let { insertAtCursor(it) }
                 suppressNextChar = true
                 return true
             }
@@ -218,12 +455,8 @@ class CRChatInputField(
         if (chr.code in 0xAC00..0xD7A3 || chr.code in 0x3131..0x318E) {
             return true
         }
-        appendToBuffer(chr.toString())
+        if (hasSelection) deleteSelection()
+        insertAtCursor(chr.toString())
         return true
-    }
-
-    private fun appendToBuffer(s: String) {
-        if (buffer.length >= maxLength) return
-        buffer.append(s.take(maxLength - buffer.length))
     }
 }

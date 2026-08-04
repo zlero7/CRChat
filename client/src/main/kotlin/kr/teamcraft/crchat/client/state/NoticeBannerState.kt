@@ -7,6 +7,11 @@ package kr.teamcraft.crchat.client.state
  * 채팅 로그(공지 탭)와는 완전히 별개다 — 공지는 여전히 [ChatState] 에도 그대로
  * 쌓인다. 이건 그 위에 추가로 잠깐 띄우는 연출일 뿐이라, 세션 메모리에만 있고
  * 저장하지 않는다.
+ *
+ * "한 번 지나가면 사라지게" 하기 위해, 언제 끝나는지는 여기서 고정 시간으로 정하지
+ * 않는다 — 텍스트 폭·화면 폭에 따라 한 바퀴 도는 데 걸리는 시간이 다르므로, 실제로
+ * 화면을 다 가로지르는 시점은 [kr.teamcraft.crchat.client.ui.NoticeBannerRenderer]
+ * 가 매 프레임 진행도를 계산해서 판단하고, 다 지나가면 [clear] 를 부른다.
  */
 object NoticeBannerState {
 
@@ -14,9 +19,6 @@ object NoticeBannerState {
         private set
 
     private var startTime: Long = 0L
-
-    /** 이 시간이 지나면 스크롤 도중이라도 배너를 치운다 — 공지 하나가 화면을 계속 가리면 안 된다. */
-    private const val DISPLAY_DURATION_MS = 15_000L
 
     fun show(newText: String) {
         if (newText.isBlank()) return
@@ -26,13 +28,8 @@ object NoticeBannerState {
 
     val elapsedMs: Long get() = System.currentTimeMillis() - startTime
 
-    /** @return 지금 그려야 하면 true. 시간이 다 됐으면 여기서 스스로 정리한다. */
-    fun isActive(): Boolean {
-        if (text == null) return false
-        if (elapsedMs > DISPLAY_DURATION_MS) {
-            text = null
-            return false
-        }
-        return true
+    /** 한 바퀴를 다 지나갔을 때 렌더러가 부른다. */
+    fun clear() {
+        text = null
     }
 }

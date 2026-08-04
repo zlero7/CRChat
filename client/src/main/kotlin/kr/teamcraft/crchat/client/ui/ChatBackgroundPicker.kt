@@ -27,6 +27,9 @@ class ChatBackgroundPicker {
     private val gap = 6
     private val svStep = 2
 
+    /** [svY]·[hueY] 등이 전부 `y + 고정값` 형태라, y 와 무관한 콘텐츠 총 높이를 미리 계산해 둔다. */
+    private val contentHeight = 14 + 100 /* svSize */ + 6 /* gap */ + 8 /* hueBarHeight */ + 6 /* gap */ + 12 + 10
+
     private var draggingSv = false
     private var draggingHue = false
 
@@ -35,16 +38,19 @@ class ChatBackgroundPicker {
     private val toggleY get() = hueY + hueBarHeight + gap + 12
     private val bottom get() = toggleY + 10
 
-    fun toggle(anchorX: Int, anchorY: Int) {
-        open = !open
+    /**
+     * [rightEdgeX] 에 팝업 오른쪽 끝을 맞춰서 연다 — 설정 버튼 바로 아래 붙어 보이게
+     * 하려는 것이다(전에는 패널 왼쪽 끝에 고정돼서 버튼이랑 동떨어져 보였다 — 실제로
+     * 이 문제가 있었다). 화면 밖으로 안 나가게 [screenWidth]·[screenHeight] 안으로 자른다.
+     */
+    fun toggle(rightEdgeX: Int, topY: Int, screenWidth: Int, screenHeight: Int) {
         if (open) {
-            // 팝업이 화면 위로 나가지 않게, 앵커 아래로 못 그리면 위로 펼친다.
-            x = anchorX
-            y = anchorY
-        } else {
-            draggingSv = false
-            draggingHue = false
+            close()
+            return
         }
+        open = true
+        x = (rightEdgeX - width).coerceIn(4, (screenWidth - width - 4).coerceAtLeast(4))
+        y = topY.coerceIn(4, (screenHeight - contentHeight - 4).coerceAtLeast(4))
     }
 
     fun close() {

@@ -147,9 +147,11 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
             val width = TextRenderUtil.scaledWidth(textRenderer, tab.label)
             val hovered = mouseX in x..(x + width) && mouseY in rowY..(rowY + tabBarHeight)
 
-            // 안 읽은 메시지가 있는 탭은 배경을 노랗게 강조한다 (사용자 요청).
+            // 안 읽은 메시지가 있는 탭은 배경을 노랗게 강조한다 (사용자 요청) — 처음엔
+            // 40% 불투명도라 어두운 패널 위에서 칙칙한 올리브색으로 보였다. 알파를
+            // 확 올리고 색도 더 선명한 골드로 바꿨다.
             if (tab in ChatOverlayState.unreadTabs) {
-                context.fill(x - 2, rowY + 1, x + width + 2, rowY + tabBarHeight - 1, 0x66FFEE58)
+                context.fill(x - 2, rowY + 1, x + width + 2, rowY + tabBarHeight - 1, 0xE6FFC400.toInt())
             }
 
             val color = when {
@@ -262,7 +264,7 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
                 // 설정 줄 — 배경색 버튼이 아니면 패널 이동으로 취급한다.
                 val (labelX, labelWidth) = backgroundButtonBounds(main)
                 if (mouseX >= labelX && mouseX <= labelX + labelWidth) {
-                    backgroundPicker.toggle(main.x + 4, tabRowY + tabBarHeight + 6)
+                    backgroundPicker.toggle(labelX + labelWidth, tabRowY + tabBarHeight + 4, width, height)
                     return true
                 }
                 startDrag(main, DragMode.MOVE, mouseX, mouseY)

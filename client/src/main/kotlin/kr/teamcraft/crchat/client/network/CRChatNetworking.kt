@@ -62,6 +62,9 @@ object CRChatNetworking {
 
             is S2C.Error -> logger.info("서버 거부: {}", packet.reasonKey)
 
+            // 관리자의 /채팅청소 — 로컬에 쌓인 채팅 로그를 전부 지운다.
+            is S2C.ClearMessages -> ChatState.messages.clear()
+
             else -> logger.info("아직 처리하지 않는 패킷: {}", packet)
         }
     }

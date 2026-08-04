@@ -16,7 +16,7 @@ class ChatRelay(
     private val plugin: JavaPlugin,
     private val db: ChatRelayDatabase,
     private val config: NetworkConfig,
-    private val onMessageReceived: (RelayEnvelope) -> Unit,
+    private val onMessageReceived: (RelayEvent) -> Unit,
 ) {
     private var lastSeenId: Long = 0
     private var pollTask: BukkitTask? = null
@@ -41,7 +41,7 @@ class ChatRelay(
     }
 
     /** 반드시 비동기로 쓴다 — 메인 스레드에서 DB 왕복을 기다리면 서버가 순간 멈춘다. */
-    fun publish(channel: String, envelope: RelayEnvelope) {
+    fun publish(channel: String, envelope: RelayEvent) {
         Bukkit.getScheduler().runTaskAsynchronously(
             plugin,
             Runnable {

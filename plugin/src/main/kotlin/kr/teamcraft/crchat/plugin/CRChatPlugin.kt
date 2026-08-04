@@ -8,10 +8,13 @@ import kr.teamcraft.crchat.plugin.channel.ChannelRegistry
 import kr.teamcraft.crchat.plugin.channel.ChannelResolver
 import kr.teamcraft.crchat.plugin.channel.CooldownTracker
 import kr.teamcraft.crchat.plugin.channel.VanillaTeamPartyProvider
+import kr.teamcraft.crchat.plugin.moderation.FreezeService
+import kr.teamcraft.crchat.plugin.moderation.ModerationCommands
+import kr.teamcraft.crchat.plugin.moderation.MuteService
 import kr.teamcraft.crchat.plugin.network.ChatRelay
 import kr.teamcraft.crchat.plugin.network.ChatRelayDatabase
 import kr.teamcraft.crchat.plugin.network.NetworkConfig
-import kr.teamcraft.crchat.plugin.network.RelayEnvelope
+import kr.teamcraft.crchat.plugin.network.RelayEvent
 import kr.teamcraft.crchat.plugin.sender.SenderRegistry
 import kr.teamcraft.crchat.protocol.C2S
 import kr.teamcraft.crchat.protocol.CHANNEL_ID
@@ -59,9 +62,15 @@ class CRChatPlugin : JavaPlugin(), Listener, PluginMessageListener, CommandExecu
     private lateinit var networkConfig: NetworkConfig
     private lateinit var senders: SenderRegistry
 
-    /** 크로스서버 연동(13장 Phase 8)이 꺼져 있거나 DB 접속에 실패하면 둘 다 null 로 남고, 로컬 전달만 동작한다. */
+    /**
+     * 크로스서버 연동(13장 Phase 8)이 꺼져 있거나 DB 접속에 실패하면 전부 null 로
+     * 남고, 로컬 전달만 동작한다. 뮤트·채팅 동결은 같은 MySQL 을 그대로 쓴다(7.2) —
+     * DB가 없으면 그 두 기능도 같이 못 쓴다([ModerationCommands] 가 안내한다).
+     */
     private var relayDb: ChatRelayDatabase? = null
     private var chatRelay: ChatRelay? = null
+    private var muteService: MuteService? = null
+    private var freezeService: FreezeService? = null
 
     /** 다른 서버까지 퍼져야 하는 채널. 길드·파티는 아직 서버 로컬 판정만 가능해 제외한다(13장 Phase 8 참고). */
     private val relayedChannels = setOf(Channel.GLOBAL, Channel.GENERAL)
@@ -91,12 +100,20 @@ class CRChatPlugin : JavaPlugin(), Listener, PluginMessageListener, CommandExecu
         server.messenger.registerIncomingPluginChannel(this, CHANNEL_ID, this)
         server.pluginManager.registerEvents(this, this)
         getCommand("공지")?.setExecutor(this)
+
+        val moderationCommands = ModerationCommands(this, muteService, freezeService, chatRelay)
+        for (name in listOf("뮤트", "언뮤트", "뮤트목록", "채팅청소", "채팅동결")) {
+            getCommand(name)?.setExecutor(moderationCommands)
+        }
+
         logger.info("CRChat 활성화 (protocol v$PROTOCOL_VERSION, server-id=${networkConfig.serverId})")
     }
 
     /**
      * `network.enabled` 가 꺼져 있거나 MySQL 접속 자체가 안 되면 조용히 로컬 전달만
-     * 쓰는 모드로 남는다 — DB 하나 때문에 서버 전체가 못 뜨면 안 된다.
+     * 쓰는 모드로 남는다 — DB 하나 때문에 서버 전체가 못 뜨면 안 된다. 뮤트·채팅 동결도
+     * 같은 MySQL 을 쓰므로 이때 같이 못 켜진다 — [ModerationCommands] 가 그 경우
+     * 안내 문구를 보여준다.
      */
     private fun setUpNetwork() {
         if (!networkConfig.networkEnabled) return
@@ -108,11 +125,16 @@ class CRChatPlugin : JavaPlugin(), Listener, PluginMessageListener, CommandExecu
             db.ensureSchema()
             relayDb = db
             chatRelay = ChatRelay(this, db, networkConfig, ::onRelayedMessage).also { it.start() }
+            muteService = MuteService(db).also { it.ensureSchema() }
+            freezeService = FreezeService(db).also { it.ensureSchema() }
             logger.info("크로스서버 채팅 연동 활성화 (MySQL)")
         } catch (e: Exception) {
             logger.warning("크로스서버 채팅 연동 초기화 실패 — 로컬 전달만 사용합니다: ${e.message}")
             relayDb?.close()
             relayDb = null
+            chatRelay = null
+            muteService = null
+            freezeService = null
         }
     }
 
@@ -237,6 +259,22 @@ class CRChatPlugin : JavaPlugin(), Listener, PluginMessageListener, CommandExecu
             return
         }
 
+        val freeze = freezeService?.state()
+        if (freeze?.frozen == true && !player.hasPermission("crchat.admin.freeze.bypass")) {
+            sendSystemMessage(player, "채팅이 잠시 동결되었습니다" + (freeze.reason?.let { " · 사유: $it" } ?: ""))
+            sendError(player, "frozen")
+            return
+        }
+
+        val mute = muteService?.activeMute(player.uniqueId, channel.id)
+        if (mute != null) {
+            val remain = mute.until?.let { formatRemaining(it) } ?: "영구"
+            val muteScope = mute.channel?.let { "[$it] " } ?: ""
+            sendSystemMessage(player, "${muteScope}뮤트 상태입니다 · 남은 시간 $remain" + (mute.reason?.let { " · 사유: $it" } ?: ""))
+            sendError(player, "muted")
+            return
+        }
+
         val remaining = cooldowns.remaining(player, channel, config.cooldownSeconds)
         if (remaining > 0.0) {
             sendError(player, "cooldown")
@@ -271,27 +309,62 @@ class CRChatPlugin : JavaPlugin(), Listener, PluginMessageListener, CommandExecu
         }
 
         if (channel in relayedChannels) {
-            chatRelay?.publish(channel.id, RelayEnvelope(chatMessage, senderDef))
+            chatRelay?.publish(channel.id, RelayEvent.Chat(chatMessage, senderDef))
         }
     }
 
     /**
-     * 다른 서버가 MySQL 릴레이 테이블에 올린 메시지를 이 서버 온라인 플레이어에게
-     * 전달한다. GLOBAL·GENERAL 은 애초에 서버 전체가 대상이라([ChannelResolver.recipients])
-     * 여기서도 그대로 전체 온라인 플레이어에게 보낸다 — 발신 서버가 아니므로 발신자를
-     * 다시 만들 수 없어 [RelayEnvelope.senderDef] 를 그대로 실어 보낸다.
+     * 다른 서버가 MySQL 릴레이 테이블에 올린 이벤트를 이 서버 온라인 플레이어에게
+     * 반영한다. 채팅 메시지([RelayEvent.Chat])는 GLOBAL·GENERAL 이 애초에 서버 전체가
+     * 대상이라([ChannelResolver.recipients]) 여기서도 그대로 전체 온라인 플레이어에게
+     * 보낸다 — 발신 서버가 아니므로 발신자를 다시 만들 수 없어 [RelayEvent.Chat.senderDef]
+     * 를 그대로 실어 보낸다. `/채팅청소`([RelayEvent.ClearChat])는 다른 서버에서 실행됐어도
+     * 이 서버 온라인 플레이어에게 똑같이 청소 지시를 보낸다.
      */
-    private fun onRelayedMessage(envelope: RelayEnvelope) {
-        val senderDefBytes = envelope.senderDef?.let { PacketCodec.encode(S2C.SenderDefs(listOf(it))) }
-        val messageBytes = PacketCodec.encode(S2C.Messages(listOf(envelope.chatMessage)))
-        for (recipient in server.onlinePlayers) {
-            senderDefBytes?.let { recipient.sendPluginMessage(this, CHANNEL_ID, it) }
-            recipient.sendPluginMessage(this, CHANNEL_ID, messageBytes)
+    private fun onRelayedMessage(event: RelayEvent) {
+        when (event) {
+            is RelayEvent.Chat -> {
+                val senderDefBytes = event.senderDef?.let { PacketCodec.encode(S2C.SenderDefs(listOf(it))) }
+                val messageBytes = PacketCodec.encode(S2C.Messages(listOf(event.chatMessage)))
+                for (recipient in server.onlinePlayers) {
+                    senderDefBytes?.let { recipient.sendPluginMessage(this, CHANNEL_ID, it) }
+                    recipient.sendPluginMessage(this, CHANNEL_ID, messageBytes)
+                }
+            }
+
+            RelayEvent.ClearChat -> {
+                val bytes = PacketCodec.encode(S2C.ClearMessages)
+                for (recipient in server.onlinePlayers) {
+                    recipient.sendPluginMessage(this, CHANNEL_ID, bytes)
+                }
+            }
         }
     }
 
     private fun sendError(player: Player, reasonKey: String) {
         player.sendPluginMessage(this, CHANNEL_ID, PacketCodec.encode(S2C.Error(reasonKey)))
+    }
+
+    /** 뮤트·채팅 동결처럼 "왜 안 보내졌는지" 그 자리에서 바로 보여줘야 하는 안내에 쓴다. "system" 채널이라 [!] 접두로 뜬다. */
+    private fun sendSystemMessage(player: Player, text: String) {
+        val message = ChatMessage(
+            id = messageIdCounter.incrementAndGet(),
+            channel = "system",
+            senderId = null,
+            segments = listOf(Segment.Text(text)),
+            timestamp = System.currentTimeMillis(),
+        )
+        player.sendPluginMessage(this, CHANNEL_ID, PacketCodec.encode(S2C.Messages(listOf(message))))
+    }
+
+    private fun formatRemaining(untilMillis: Long): String {
+        val remainSeconds = ((untilMillis - System.currentTimeMillis()) / 1000).coerceAtLeast(0)
+        return when {
+            remainSeconds < 60 -> "${remainSeconds}초"
+            remainSeconds < 3600 -> "${remainSeconds / 60}분"
+            remainSeconds < 86400 -> "${remainSeconds / 3600}시간"
+            else -> "${remainSeconds / 86400}일"
+        }
     }
 
     private fun helloPacket() = S2C.Hello(protocolVersion = PROTOCOL_VERSION, serverId = networkConfig.serverId)
@@ -326,7 +399,7 @@ class CRChatPlugin : JavaPlugin(), Listener, PluginMessageListener, CommandExecu
         for (recipient in server.onlinePlayers) {
             recipient.sendPluginMessage(this, CHANNEL_ID, bytes)
         }
-        chatRelay?.publish(Channel.NOTICE.id, RelayEnvelope(message, null))
+        chatRelay?.publish(Channel.NOTICE.id, RelayEvent.Chat(message, null))
         logger.info("[공지] $sanitized")
     }
 }

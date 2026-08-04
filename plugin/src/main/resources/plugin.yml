@@ -10,6 +10,26 @@ commands:
     description: 전 서버 공지 (공지 탭으로 간다, 4.1)
     usage: /공지 <내용>
     permission: crchat.admin.notice
+  뮤트:
+    description: 채널별·기간제 뮤트 (7.2)
+    usage: /뮤트 <닉네임> <기간(10m/1h/3d/perm)> [채널] [사유]
+    permission: crchat.admin.mute
+  언뮤트:
+    description: 뮤트 해제. 채널 생략 시 전부 해제
+    usage: /언뮤트 <닉네임> [채널]
+    permission: crchat.admin.mute
+  뮤트목록:
+    description: 활성·과거 뮤트 이력
+    usage: /뮤트목록 <닉네임>
+    permission: crchat.admin.mute
+  채팅청소:
+    description: 전 서버(연동 시) 채팅 로그 정리
+    usage: /채팅청소
+    permission: crchat.admin.clear
+  채팅동결:
+    description: 채팅 발신 전체 동결 토글. 네트워크 전역
+    usage: /채팅동결 [사유]
+    permission: crchat.admin.freeze
 
 # channels.yml 의 permission 노드들을 여기서 등록하지 않으면 Bukkit 기본값(default: op)이
 # 적용돼서 op 만 채팅을 보낼 수 있게 된다 — 실제로 이 버그가 있었다. 일반 유저도 쓰는
@@ -25,3 +45,13 @@ permissions:
     default: true
   crchat.admin.notice:
     default: op
+  crchat.admin.mute:
+    default: op
+  crchat.admin.clear:
+    default: op
+  crchat.admin.freeze:
+    default: op
+  # 채팅 동결 중에도 발신할 수 있는 예외. op 라도 기본으로는 안 준다 — 관리자가
+  # 동결을 걸어놓고 자기가 실수로 계속 떠들 수 있으니, 일부러 켜고 싶을 때만 켠다.
+  crchat.admin.freeze.bypass:
+    default: false

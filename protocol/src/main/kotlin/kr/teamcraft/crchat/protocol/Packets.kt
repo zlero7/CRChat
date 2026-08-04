@@ -50,6 +50,11 @@ sealed class S2C {
     @Serializable
     @SerialName("error")
     data class Error(val reasonKey: String) : S2C()
+
+    /** `/채팅청소` — 클라가 갖고 있는 채팅 로그를 전부 지운다. (관리자 명령어) */
+    @Serializable
+    @SerialName("clear_messages")
+    data object ClearMessages : S2C()
 }
 
 @Serializable

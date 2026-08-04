@@ -114,4 +114,10 @@ class PacketCodecTest {
         val hello = C2S.Hello(protocolVersion = PROTOCOL_VERSION, modVersion = "0.1.0")
         assertEquals(hello, PacketCodec.decodeC2S(PacketCodec.encode(hello)))
     }
+
+    @Test
+    fun `채팅청소 패킷이 왕복한다`() {
+        val clear = S2C.ClearMessages
+        assertEquals(clear, PacketCodec.decodeS2C(PacketCodec.encode(clear)))
+    }
 }

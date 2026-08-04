@@ -34,10 +34,15 @@ class ChatBackgroundPicker {
     private var draggingSv = false
     private var draggingHue = false
 
+    // svY·hueY·toggleY·bottom 은 전부 y 를 이미 포함한 "절대" 화면 좌표다 — y 가 체인의
+    // 맨 끝(svY)에서 한 번만 더해지고 나머진 그 위에 계속 쌓이는 구조라서, 호출부에서
+    // 실수로 y 를 또 더하면(`y + bottom`) 두 번 더해진다. 실제로 이 버그가 있었다 —
+    // 팝업이 패널을 아래로 옮길수록 밑에 여백이 늘어났는데, 원인이 바로 이 y 중복 합산
+    // 이었다(패널이 아래에 있을수록 y 가 커서 두 번 더해진 만큼 오차가 커졌다).
     private val svY get() = y + 14
     private val hueY get() = svY + svSize + gap
     private val toggleY get() = hueY + hueBarHeight + gap + 12
-    /** "커스텀 배경 ..." 줄 바로 아래에서 끊는다 — 전엔 밑에 빈 여백이 남아 있었다(실제로 이 문제가 있었다). */
+    /** "커스텀 배경 ..." 줄 바로 아래에서 끊는다. 이미 절대좌표다 — 쓸 때 y 를 또 더하지 않는다. */
     private val bottom get() = toggleY + 8
 
     /**
@@ -65,11 +70,11 @@ class ChatBackgroundPicker {
     fun render(context: DrawContext, textRenderer: TextRenderer) {
         if (!open) return
 
-        context.fill(x - 6, y - 6, x + width + 6, y + bottom + bottomPad, 0xF0101018.toInt())
+        context.fill(x - 6, y - 6, x + width + 6, bottom + bottomPad, 0xF0101018.toInt())
         context.fill(x - 6, y - 6, x + width + 6, y - 5, 0x77FFFFFF.toInt())
-        context.fill(x - 6, y + bottom + bottomPad - 1, x + width + 6, y + bottom + bottomPad, 0x77FFFFFF.toInt())
-        context.fill(x - 6, y - 6, x - 5, y + bottom + bottomPad, 0x77FFFFFF.toInt())
-        context.fill(x + width + 5, y - 6, x + width + 6, y + bottom + bottomPad, 0x77FFFFFF.toInt())
+        context.fill(x - 6, bottom + bottomPad - 1, x + width + 6, bottom + bottomPad, 0x77FFFFFF.toInt())
+        context.fill(x - 6, y - 6, x - 5, bottom + bottomPad, 0x77FFFFFF.toInt())
+        context.fill(x + width + 5, y - 6, x + width + 6, bottom + bottomPad, 0x77FFFFFF.toInt())
 
         TextRenderUtil.drawScaled(context, textRenderer, Text.literal("배경색"), x, y, 0xFFFFFF)
 
@@ -116,7 +121,7 @@ class ChatBackgroundPicker {
     fun mouseClicked(mouseX: Double, mouseY: Double): Boolean {
         if (!open) return false
 
-        if (mouseX < x - 6 || mouseX > x + width + 6 || mouseY < y - 6 || mouseY > y + bottom + bottomPad) {
+        if (mouseX < x - 6 || mouseX > x + width + 6 || mouseY < y - 6 || mouseY > bottom + bottomPad) {
             close()
             return true // 팝업 밖 클릭 — 닫기만 하고, 뒤 UI 클릭으로는 안 넘긴다.
         }

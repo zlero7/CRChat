@@ -18,8 +18,12 @@ object ChatUiScale {
      * 있었다 — Auto(더 높은 배율)에서는 멀쩡했는데, 낮은 GUI Scale 로 바꾸니 논리
      * 단위당 실제 픽셀 수가 줄어서 우리 축소분(0.8배)까지 곱해지면 실제 렌더 해상도가
      * 너무 낮아졌던 것이다.
+     *
+     * 처음엔 1.8 로 뒀는데 GUI Scale 2(=1.8/2=0.9배)에서도 여전히 살짝 깨져 보였다 —
+     * 정확히 "간신히 버티는" 경계값이라 여유가 없었다. 2.4 로 올려서 GUI Scale 1~2
+     * 에서는 아예 축소를 끄고(1.0=바닐라 원본) 바닐라와 동일한 렌더 품질을 보장한다.
      */
-    private const val MIN_REAL_PIXEL_SCALE = 1.8f
+    private const val MIN_REAL_PIXEL_SCALE = 2.4f
 
     /**
      * 지금 GUI Scale 에서 안전한 배율을 골라 쓴다 — GUI Scale 이 낮으면(논리 단위당

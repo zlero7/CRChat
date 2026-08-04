@@ -1,5 +1,6 @@
 package kr.teamcraft.crchat.client.ui
 
+import kr.teamcraft.crchat.client.state.ChatAppearanceState
 import kr.teamcraft.crchat.client.state.ChatOverlayState
 import kr.teamcraft.crchat.common.hangul.Dubeolsik
 import kr.teamcraft.crchat.common.hangul.HangulComposer
@@ -213,7 +214,9 @@ class CRChatInputField(
         val boxHeight = (ranges.size * ChatUiScale.LINE_HEIGHT + 6).coerceAtLeast(minHeight)
 
         // 배경 + 테두리 — 이게 없으면 게임 화면과 안 구분돼서 입력창처럼 안 보인다.
-        context.fill(x, y, x + width, y + boxHeight, 0xEE101018.toInt())
+        // 배경색은 채팅 패널과 같은 설정([ChatAppearanceState])을 따른다 — 둘이 따로
+        // 놀면 커스텀 배경을 켰을 때 입력창만 안 바뀌어서 어색해 보인다.
+        context.fill(x, y, x + width, y + boxHeight, ChatAppearanceState.panelBackgroundArgb(0xEE101018.toInt()))
         context.fill(x, y, x + width, y + 1, 0x77FFFFFF.toInt()) // 위
         context.fill(x, y + boxHeight - 1, x + width, y + boxHeight, 0x77FFFFFF.toInt()) // 아래
         context.fill(x, y, x + 1, y + boxHeight, 0x77FFFFFF.toInt()) // 왼쪽

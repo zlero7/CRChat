@@ -1,6 +1,7 @@
 package kr.teamcraft.crchat.client.ui
 
 import kr.teamcraft.crchat.client.network.CRChatNetworking
+import kr.teamcraft.crchat.client.state.ChatAppearanceState
 import kr.teamcraft.crchat.client.state.ChatHistory
 import kr.teamcraft.crchat.client.state.ChatOverlayState
 import kr.teamcraft.crchat.client.state.ChatState
@@ -29,10 +30,20 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
     /** 명령어("/") 자동완성 — [CommandSuggestions] 참조. */
     private lateinit var commandSuggestions: CommandSuggestions
 
+    /** 배경색 커스터마이즈 팝업 — [ChatBackgroundPicker] 참조. */
+    private val backgroundPicker = ChatBackgroundPicker()
+
     private val tabBarHeight = ChatUiScale.TAB_BAR_HEIGHT
+
+    /** 메인 패널에만 붙는 "채팅 / 배경색" 설정 줄. 참고 이미지처럼 탭 줄 위에 한 줄 더 있다. */
+    private val settingsRowHeight = ChatUiScale.TAB_BAR_HEIGHT
     private val lineHeight = ChatUiScale.LINE_HEIGHT
     private val handleSize = 8
     private val inputHeight = 14
+
+    /** 메인 패널은 설정 줄 + 탭 줄, 분리된 패널은 자기 헤더(채널명+닫기) 한 줄뿐이다. */
+    private fun headerHeight(panel: OverlayPanel): Int =
+        if (panel === ChatOverlayState.main) settingsRowHeight + tabBarHeight else tabBarHeight
 
     private enum class DragMode { MOVE, RESIZE }
 
@@ -84,17 +95,20 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
         context.matrices.push()
         context.matrices.translate(0f, 0f, 200f)
         commandSuggestions.render(context, input.x, input.y, input.width)
+        backgroundPicker.render(context, textRenderer)
         context.matrices.pop()
     }
 
     private fun renderPanel(context: DrawContext, panel: OverlayPanel, mouseX: Int, mouseY: Int) {
         val isMain = panel === ChatOverlayState.main
+        val header = headerHeight(panel)
 
-        context.fill(panel.x, panel.y, panel.x + panel.width, panel.y + tabBarHeight, 0xEE101018.toInt())
-        context.fill(panel.x, panel.y + tabBarHeight, panel.x + panel.width, panel.y + panel.height, 0xAA101018.toInt())
+        context.fill(panel.x, panel.y, panel.x + panel.width, panel.y + header, ChatAppearanceState.panelBackgroundArgb(0xEE101018.toInt()))
+        context.fill(panel.x, panel.y + header, panel.x + panel.width, panel.y + panel.height, ChatAppearanceState.panelBackgroundArgb(0xAA101018.toInt()))
 
         if (isMain) {
-            renderTabs(context, panel, mouseX, mouseY)
+            renderSettingsRow(context, panel, mouseX, mouseY)
+            renderTabs(context, panel, panel.y + settingsRowHeight, mouseX, mouseY)
         } else {
             TextRenderUtil.drawScaled(context, textRenderer, Text.literal(panel.tab?.label ?: "?"), panel.x + 4, panel.y + 3, 0xFFFFFF)
             TextRenderUtil.drawScaled(context, textRenderer, Text.literal("x"), panel.x + panel.width - 10, panel.y + 3, 0xFF8080)
@@ -104,19 +118,48 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
         renderResizeIcon(context, panel)
     }
 
-    private fun renderTabs(context: DrawContext, panel: OverlayPanel, mouseX: Int, mouseY: Int) {
+    /** 참고 이미지의 "채팅 ... BGM 말풍선 설정" 줄과 같은 자리 — 제목 + 배경색 설정 버튼. */
+    private fun renderSettingsRow(context: DrawContext, panel: OverlayPanel, mouseX: Int, mouseY: Int) {
+        TextRenderUtil.drawScaled(context, textRenderer, Text.literal("채팅"), panel.x + 4, panel.y + 3, 0xCCCCCC)
+
+        val (labelX, labelWidth) = backgroundButtonBounds(panel)
+        val hovered = mouseX in labelX..(labelX + labelWidth) && mouseY in panel.y..(panel.y + settingsRowHeight)
+        val color = if (backgroundPicker.open || hovered) 0xFFFFFF else 0xAAAAAA
+        TextRenderUtil.drawScaled(context, textRenderer, Text.literal(backgroundButtonLabel()), labelX, panel.y + 3, color)
+
+        context.fill(panel.x, panel.y + settingsRowHeight - 1, panel.x + panel.width, panel.y + settingsRowHeight, 0x33FFFFFF)
+    }
+
+    private fun backgroundButtonLabel(): String =
+        if (ChatAppearanceState.customBackgroundEnabled) "배경색 ●" else "배경색 ○"
+
+    /** [renderSettingsRow] 와 클릭 판정([mouseClicked])이 같은 좌표를 쓰게 공유한다. */
+    private fun backgroundButtonBounds(panel: OverlayPanel): Pair<Int, Int> {
+        val label = backgroundButtonLabel()
+        val labelWidth = TextRenderUtil.scaledWidth(textRenderer, label)
+        val labelX = panel.x + panel.width - labelWidth - 14
+        return labelX to labelWidth
+    }
+
+    private fun renderTabs(context: DrawContext, panel: OverlayPanel, rowY: Int, mouseX: Int, mouseY: Int) {
         var x = panel.x + 4
         for (tab in Tab.entries) {
             val width = TextRenderUtil.scaledWidth(textRenderer, tab.label)
-            val hovered = mouseX in x..(x + width) && mouseY in panel.y..(panel.y + tabBarHeight)
+            val hovered = mouseX in x..(x + width) && mouseY in rowY..(rowY + tabBarHeight)
+
+            // 안 읽은 메시지가 있는 탭은 배경을 노랗게 강조한다 (사용자 요청).
+            if (tab in ChatOverlayState.unreadTabs) {
+                context.fill(x - 2, rowY + 1, x + width + 2, rowY + tabBarHeight - 1, 0x66FFEE58)
+            }
+
             val color = when {
                 tab == ChatOverlayState.activeTab -> 0xFFFFFF
                 hovered -> 0xAAAAAA
                 else -> 0x808080
             }
-            TextRenderUtil.drawScaled(context, textRenderer, Text.literal(tab.label), x, panel.y + 3, color)
+            TextRenderUtil.drawScaled(context, textRenderer, Text.literal(tab.label), x, rowY + 3, color)
             if (tab == ChatOverlayState.activeTab) {
-                context.fill(x, panel.y + tabBarHeight - 2, x + width, panel.y + tabBarHeight - 1, 0xFFFFFFFF.toInt())
+                context.fill(x, rowY + tabBarHeight - 2, x + width, rowY + tabBarHeight - 1, 0xFFFFFFFF.toInt())
             }
             x += width + 10
         }
@@ -153,8 +196,9 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
     }
 
     private fun renderMessages(context: DrawContext, panel: OverlayPanel) {
+        val header = headerHeight(panel)
         val lines = visibleLines(panel)
-        val maxLines = (panel.height - tabBarHeight) / lineHeight
+        val maxLines = (panel.height - header) / lineHeight
         val maxScroll = (lines.size - maxLines).coerceAtLeast(0)
         panel.scrollOffset = panel.scrollOffset.coerceIn(0, maxScroll)
 
@@ -164,20 +208,20 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
 
         // 자동 줄넘김만으로는 못 끊는 긴 토큰(URL 등)까지 대비해, 그려질 영역 밖으로는
         // 아예 안 나가도록 한 번 더 잘라낸다.
-        context.enableScissor(panel.x, panel.y + tabBarHeight, panel.x + panel.width, panel.y + panel.height)
+        context.enableScissor(panel.x, panel.y + header, panel.x + panel.width, panel.y + panel.height)
         var y = panel.y + panel.height - lineHeight
         for (line in visible.asReversed()) {
             if (line != null) {
                 TextRenderUtil.drawScaled(context, textRenderer, line, panel.x + 4, y, 0xFFFFFF)
             }
             y -= lineHeight
-            if (y < panel.y + tabBarHeight) break
+            if (y < panel.y + header) break
         }
         context.disableScissor()
 
         if (lines.size > maxLines) {
-            val trackTop = panel.y + tabBarHeight
-            val trackHeight = panel.height - tabBarHeight
+            val trackTop = panel.y + header
+            val trackHeight = panel.height - header
             val barX = panel.x + panel.width - 3
             val thumbHeight = (trackHeight * maxLines / lines.size).coerceAtLeast(6)
             val thumbY = trackTop + (trackHeight - thumbHeight) * (maxScroll - panel.scrollOffset) / maxScroll.coerceAtLeast(1)
@@ -190,7 +234,7 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
         for (panel in ChatOverlayState.panels) {
             if (mouseX >= panel.x && mouseX <= panel.x + panel.width && mouseY >= panel.y && mouseY <= panel.y + panel.height) {
                 val lineCount = visibleLines(panel).size
-                val maxLines = (panel.height - tabBarHeight) / lineHeight
+                val maxLines = (panel.height - headerHeight(panel)) / lineHeight
                 val maxScroll = (lineCount - maxLines).coerceAtLeast(0)
                 panel.scrollOffset = (panel.scrollOffset + verticalAmount.toInt()).coerceIn(0, maxScroll)
                 return true
@@ -200,6 +244,7 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
     }
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        if (backgroundPicker.mouseClicked(mouseX, mouseY)) return true
         if (commandSuggestions.mouseClicked(mouseX, mouseY) { input.text = it }) return true
 
         // 크기 조절 손잡이가 최우선이다 (다른 영역과 겹쳐도 항상 잡을 수 있어야 함)
@@ -212,6 +257,18 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
 
         val main = ChatOverlayState.main
         if (inHeader(main, mouseX, mouseY)) {
+            val tabRowY = main.y + settingsRowHeight
+            if (mouseY < tabRowY) {
+                // 설정 줄 — 배경색 버튼이 아니면 패널 이동으로 취급한다.
+                val (labelX, labelWidth) = backgroundButtonBounds(main)
+                if (mouseX >= labelX && mouseX <= labelX + labelWidth) {
+                    backgroundPicker.toggle(main.x + 4, tabRowY + tabBarHeight + 6)
+                    return true
+                }
+                startDrag(main, DragMode.MOVE, mouseX, mouseY)
+                return true
+            }
+
             var x = main.x + 4
             for (tab in Tab.entries) {
                 val width = TextRenderUtil.scaledWidth(textRenderer, tab.label)
@@ -220,6 +277,7 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
                         ChatOverlayState.detach(tab)
                     } else {
                         ChatOverlayState.activeTab = tab
+                        ChatOverlayState.markRead(tab)
                         main.scrollOffset = 0
                     }
                     return true
@@ -248,7 +306,7 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
     }
 
     private fun inHeader(panel: OverlayPanel, mouseX: Double, mouseY: Double): Boolean =
-        mouseX >= panel.x && mouseX <= panel.x + panel.width && mouseY >= panel.y && mouseY <= panel.y + tabBarHeight
+        mouseX >= panel.x && mouseX <= panel.x + panel.width && mouseY >= panel.y && mouseY <= panel.y + headerHeight(panel)
 
     /** 리사이즈 손잡이는 이제 우상단이다 (렌더는 [renderResizeIcon] 참조). */
     private fun inHandle(panel: OverlayPanel, mouseX: Double, mouseY: Double): Boolean {
@@ -269,6 +327,7 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
     }
 
     override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, deltaX: Double, deltaY: Double): Boolean {
+        if (backgroundPicker.mouseDragged(mouseX, mouseY)) return true
         val panel = dragTarget ?: return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)
         when (dragMode) {
             DragMode.MOVE -> {
@@ -291,6 +350,7 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
     }
 
     override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        backgroundPicker.mouseReleased()
         dragTarget = null
         dragMode = null
         return super.mouseReleased(mouseX, mouseY, button)

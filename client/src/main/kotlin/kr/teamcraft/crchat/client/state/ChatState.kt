@@ -24,6 +24,8 @@ object ChatState {
     fun addMessage(message: ChatMessage) {
         messages.addLast(message)
         if (messages.size > HISTORY_LIMIT) messages.removeFirst()
+        // 지금 안 보고 있는 탭에 새 메시지가 왔으면 노란색으로 눈에 띄게 한다 (사용자 요청).
+        ChatOverlayState.markUnread(message.channel)
     }
 
     /** [kr.teamcraft.crchat.client.mixin.ChatHudMixin] 이 가로챈 접속 알림·명령어 피드백 등. "시스템" 채널로 들어간다. */

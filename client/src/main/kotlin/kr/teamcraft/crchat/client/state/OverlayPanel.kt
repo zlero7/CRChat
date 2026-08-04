@@ -36,6 +36,31 @@ object ChatOverlayState {
      */
     var hangulMode: Boolean = true
 
+    /**
+     * 지금 안 보고 있는 탭에 새 메시지가 왔으면 여기 담는다 — [kr.teamcraft.crchat.client.ui.CRChatScreen]
+     * 이 탭 배경을 노란색으로 강조하는 데 쓴다. (사용자 요청)
+     */
+    val unreadTabs: MutableSet<Tab> = mutableSetOf()
+
+    /**
+     * 새 메시지가 [channel] 로 왔을 때 부른다 — 그 채널을 보여주는 탭들 중 지금
+     * [activeTab] 이 아닌 것만 안 읽음으로 표시한다. "전체" 탭(channelId=null)은
+     * 모든 채널 메시지를 다 보여주므로 항상 대상에 포함된다.
+     */
+    fun markUnread(channel: String) {
+        for (tab in Tab.entries) {
+            if (tab == activeTab) continue
+            if (tab.channelId == null || tab.channelId == channel) {
+                unreadTabs += tab
+            }
+        }
+    }
+
+    /** 탭을 눌러서 보면(활성화하면) 그 탭의 안 읽음 표시를 지운다. */
+    fun markRead(tab: Tab) {
+        unreadTabs -= tab
+    }
+
     private var positioned = false
 
     /**

@@ -18,6 +18,13 @@ data class ChatMessage(
     val senderId: Int?,
     val segments: List<Segment>,
     val timestamp: Long,
+    /**
+     * 발신 서버의 `server-id`(config.yml). 크로스서버 연동(13장 Phase 8)에서 이 메시지가
+     * 어느 서버에서 왔는지 클라 채팅 줄에 "[ 서버명 ]" 으로 보여주기 위해 추가했다.
+     * 기본값을 둔 이유는 이 필드가 없던 예전 payload(예: 배포 직후 아직 처리 중이던
+     * `crchat_relay` 큐의 남은 행)도 역직렬화가 깨지지 않게 하기 위해서다.
+     */
+    val serverId: String = "",
 )
 
 /**

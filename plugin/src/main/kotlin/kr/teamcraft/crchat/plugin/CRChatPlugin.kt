@@ -307,6 +307,7 @@ class CRChatPlugin : JavaPlugin(), Listener, PluginMessageListener, CommandExecu
             senderId = senderDef.id,
             segments = listOf(Segment.Text(sanitized, color = config.color)),
             timestamp = System.currentTimeMillis(),
+            serverId = networkConfig.serverId,
         )
 
         val senderDefBytes = PacketCodec.encode(S2C.SenderDefs(listOf(senderDef)))
@@ -362,6 +363,7 @@ class CRChatPlugin : JavaPlugin(), Listener, PluginMessageListener, CommandExecu
             senderId = null,
             segments = listOf(Segment.Text(text)),
             timestamp = System.currentTimeMillis(),
+            serverId = networkConfig.serverId,
         )
         player.sendPluginMessage(this, CHANNEL_ID, PacketCodec.encode(S2C.Messages(listOf(message))))
     }
@@ -403,6 +405,7 @@ class CRChatPlugin : JavaPlugin(), Listener, PluginMessageListener, CommandExecu
             senderId = null, // null = 시스템/운영자 발행 메시지 (3장)
             segments = listOf(Segment.Text(sanitized, color = config.color)),
             timestamp = System.currentTimeMillis(),
+            serverId = networkConfig.serverId,
         )
         val bytes = PacketCodec.encode(S2C.Messages(listOf(message)))
         for (recipient in server.onlinePlayers) {

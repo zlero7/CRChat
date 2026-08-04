@@ -4,7 +4,6 @@ import kr.teamcraft.crchat.client.state.ChatState
 import kr.teamcraft.crchat.protocol.ChatMessage
 import kr.teamcraft.crchat.protocol.Segment
 import net.minecraft.client.font.TextRenderer
-import net.minecraft.text.MutableText
 import net.minecraft.text.OrderedText
 import net.minecraft.text.Style
 import net.minecraft.text.Text
@@ -14,17 +13,22 @@ import net.minecraft.util.Language
 /**
  * 상시 오버레이([ChatOverlayRenderer])와 편집 화면([CRChatScreen])이
  * 같은 한 줄 포맷을 쓰도록 공유한다. 아이템 링크·멘션 렌더는 다음 단계(6장).
+ *
+ * 색은 바닐라 레거시 코드(&7·&f·&c) 값 그대로 맞췄다 — 사용자가 그 표기로 요청했다.
  */
 object ChatLineFormatter {
 
+    private val GRAY = TextColor.fromRgb(0xAAAAAA) // &7
+    private val WHITE = TextColor.fromRgb(0xFFFFFF) // &f
+    private val RED = TextColor.fromRgb(0xFF5555) // &c
     private val SYSTEM_TAG_COLOR = TextColor.fromRgb(0xFFFF55) // 노랑 — "!" 만 이 색
 
     fun format(message: ChatMessage): Text {
         val body = message.segments.filterIsInstance<Segment.Text>().joinToString("") { it.value }
         return when (message.channel) {
-            // 공지는 발신자 표시 없이 내용만 — 운영자 공지에 "[notice]:" 같은 접두가
-            // 붙으면 정식 공지처럼 안 보인다.
-            "notice" -> colored(Text.literal(body), messageColor(message))
+            // &c[ 공지 ] : &f공지 내용
+            "notice" -> Text.literal("[ 공지 ] : ").styled { it.withColor(RED) }
+                .append(Text.literal(body).styled { it.withColor(WHITE) })
 
             // 바닐라 캡처 메시지(접속 알림·명령어 피드백)는 "[!] 내용" 형태. "!" 만 노랑,
             // 대괄호·본문은 흰색(그리는 쪽에서 넘기는 기본색을 그대로 쓴다 — 따로 안 입힘).
@@ -32,8 +36,10 @@ object ChatLineFormatter {
                 .append(Text.literal("!").styled { it.withColor(SYSTEM_TAG_COLOR) })
                 .append(Text.literal("] $body"))
 
-            // 일반 채팅은 채널 색을 입히지 않고 흰색 그대로 둔다.
-            else -> Text.literal("${ChatState.displayNameFor(message)}: $body")
+            // &7[ 서버명 ] &f닉네임 : 메시지내용 — 크로스서버 연동 중이면 어느 서버에서
+            // 온 메시지인지 바로 보이게, 서버명을 회색으로 앞에 붙인다.
+            else -> Text.literal("[ ${message.serverId} ] ").styled { it.withColor(GRAY) }
+                .append(Text.literal("${ChatState.displayNameFor(message)} : $body").styled { it.withColor(WHITE) })
         }
     }
 
@@ -59,12 +65,4 @@ object ChatLineFormatter {
     private fun wrap(textRenderer: TextRenderer, text: Text, maxWidth: Int): List<OrderedText> =
         textRenderer.textHandler.wrapLines(text, maxWidth, Style.EMPTY)
             .map { Language.getInstance().reorder(it) }
-
-    private fun messageColor(message: ChatMessage): String? =
-        message.segments.filterIsInstance<Segment.Text>().firstOrNull()?.color
-
-    private fun colored(base: MutableText, hex: String?): Text {
-        val color = hex?.let { runCatching { TextColor.fromRgb(it.removePrefix("#").toInt(16)) }.getOrNull() }
-        return color?.let { c -> base.styled { style -> style.withColor(c) } } ?: base
-    }
 }

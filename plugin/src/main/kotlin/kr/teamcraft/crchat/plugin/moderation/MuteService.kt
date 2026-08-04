@@ -21,6 +21,19 @@ data class MuteRecord(
 )
 
 /**
+ * 뮤트 저장소. [MuteService](MySQL, 네트워크 전역)와 [LocalMuteStore](로컬 파일, 이
+ * 서버만) 둘 다 구현한다 — 크로스서버 연동(MySQL)이 켜져 있든 꺼져 있든
+ * [kr.teamcraft.crchat.plugin.CRChatPlugin] 이 어느 쪽을 쓰는지 신경 안 써도 되게
+ * 하려고 인터페이스로 뺐다. 단일 서버에서도 뮤트가 되어야 한다는 요청으로 추가됐다.
+ */
+interface MuteStore {
+    fun activeMute(uuid: UUID, channel: String): MuteRecord?
+    fun mute(uuid: UUID, channel: String?, untilEpochMillis: Long?, reason: String?, issuedBy: String)
+    fun unmute(uuid: UUID, channel: String?): Int
+    fun history(uuid: UUID, limit: Int = 15): List<MuteRecord>
+}
+
+/**
  * `crchat_mute` 테이블 CRUD. (기획서 7.2)
  *
  * **행을 지우지 않는다** — 해제는 `revoked_at` 을 채우는 것으로 처리한다. 제재 이력이
@@ -34,7 +47,7 @@ data class MuteRecord(
  * Redis Pub/Sub 로 캐시를 밀어주는 기획서 원안(7.2)보다 단순하다 — 뮤트 변경은
  * 채팅 메시지만큼 잦지 않으니 매번 조회해도 부담이 없다.
  */
-class MuteService(private val db: ChatRelayDatabase) {
+class MuteService(private val db: ChatRelayDatabase) : MuteStore {
 
     fun ensureSchema() {
         db.dataSource.connection.use { conn ->
@@ -63,7 +76,7 @@ class MuteService(private val db: ChatRelayDatabase) {
      * 채널별 뮤트보다 우선한다 — 둘 다 걸려 있으면 더 강한 쪽(전체)을 보여줘야
      * 사용자가 "채널만 풀면 되는 줄" 착각하지 않는다.
      */
-    fun activeMute(uuid: UUID, channel: String): MuteRecord? =
+    override fun activeMute(uuid: UUID, channel: String): MuteRecord? =
         db.dataSource.connection.use { conn ->
             conn.prepareStatement(
                 """
@@ -81,7 +94,7 @@ class MuteService(private val db: ChatRelayDatabase) {
             }
         }
 
-    fun mute(uuid: UUID, channel: String?, untilEpochMillis: Long?, reason: String?, issuedBy: String) {
+    override fun mute(uuid: UUID, channel: String?, untilEpochMillis: Long?, reason: String?, issuedBy: String) {
         db.dataSource.connection.use { conn ->
             conn.prepareStatement(
                 "INSERT INTO crchat_mute (uuid, channel, until, reason, issued_by) VALUES (?, ?, ?, ?, ?)",
@@ -101,7 +114,7 @@ class MuteService(private val db: ChatRelayDatabase) {
      * 전부 해제한다 — "/언뮤트 <닉>" 만으로 전체 해제되는 게 관리자 기대치와 맞다.
      * @return 실제로 해제된 행 수
      */
-    fun unmute(uuid: UUID, channel: String?): Int =
+    override fun unmute(uuid: UUID, channel: String?): Int =
         db.dataSource.connection.use { conn ->
             val sql = buildString {
                 append("UPDATE crchat_mute SET revoked_at = NOW() ")
@@ -115,7 +128,7 @@ class MuteService(private val db: ChatRelayDatabase) {
             }
         }
 
-    fun history(uuid: UUID, limit: Int = 15): List<MuteRecord> =
+    override fun history(uuid: UUID, limit: Int): List<MuteRecord> =
         db.dataSource.connection.use { conn ->
             conn.prepareStatement(
                 """

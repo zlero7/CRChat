@@ -9,8 +9,12 @@ import kr.teamcraft.crchat.plugin.channel.ChannelResolver
 import kr.teamcraft.crchat.plugin.channel.CooldownTracker
 import kr.teamcraft.crchat.plugin.channel.VanillaTeamPartyProvider
 import kr.teamcraft.crchat.plugin.moderation.FreezeService
+import kr.teamcraft.crchat.plugin.moderation.FreezeStore
+import kr.teamcraft.crchat.plugin.moderation.LocalFreezeStore
+import kr.teamcraft.crchat.plugin.moderation.LocalMuteStore
 import kr.teamcraft.crchat.plugin.moderation.ModerationCommands
 import kr.teamcraft.crchat.plugin.moderation.MuteService
+import kr.teamcraft.crchat.plugin.moderation.MuteStore
 import kr.teamcraft.crchat.plugin.network.ChatRelay
 import kr.teamcraft.crchat.plugin.network.ChatRelayDatabase
 import kr.teamcraft.crchat.plugin.network.NetworkConfig
@@ -37,6 +41,7 @@ import org.bukkit.event.player.PlayerRegisterChannelEvent
 import org.bukkit.plugin.ServicePriority
 import org.bukkit.plugin.java.JavaPlugin
 import org.bukkit.plugin.messaging.PluginMessageListener
+import java.io.File
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
@@ -63,14 +68,16 @@ class CRChatPlugin : JavaPlugin(), Listener, PluginMessageListener, CommandExecu
     private lateinit var senders: SenderRegistry
 
     /**
-     * 크로스서버 연동(13장 Phase 8)이 꺼져 있거나 DB 접속에 실패하면 전부 null 로
-     * 남고, 로컬 전달만 동작한다. 뮤트·채팅 동결은 같은 MySQL 을 그대로 쓴다(7.2) —
-     * DB가 없으면 그 두 기능도 같이 못 쓴다([ModerationCommands] 가 안내한다).
+     * 크로스서버 연동(13장 Phase 8)이 꺼져 있거나 DB 접속에 실패하면 [relayDb]·[chatRelay]
+     * 는 null 로 남고 로컬 전달만 동작한다. [muteStore]·[freezeStore] 는 그것과 별개로
+     * **항상** 값이 있다 — MySQL 이 있으면 네트워크 전역([MuteService]/[FreezeService]),
+     * 없으면 이 서버 로컬 파일([LocalMuteStore]/[LocalFreezeStore])로 자동 대체된다.
+     * 단일 서버에서도 뮤트·채팅 동결이 되어야 한다는 요청으로 이렇게 나눴다.
      */
     private var relayDb: ChatRelayDatabase? = null
     private var chatRelay: ChatRelay? = null
-    private var muteService: MuteService? = null
-    private var freezeService: FreezeService? = null
+    private lateinit var muteStore: MuteStore
+    private lateinit var freezeStore: FreezeStore
 
     /** 다른 서버까지 퍼져야 하는 채널. 길드·파티는 아직 서버 로컬 판정만 가능해 제외한다(13장 Phase 8 참고). */
     private val relayedChannels = setOf(Channel.GLOBAL, Channel.GENERAL)
@@ -87,6 +94,10 @@ class CRChatPlugin : JavaPlugin(), Listener, PluginMessageListener, CommandExecu
         channelRegistry.load()
         networkConfig = NetworkConfig.load(this)
         setUpNetwork()
+        // setUpNetwork() 가 MySQL 로 못 채웠으면(꺼져 있거나 접속 실패) 이 서버 로컬
+        // 파일로 대체한다 — 단일 서버에서도 뮤트·채팅 동결이 되어야 하기 때문이다.
+        if (!::muteStore.isInitialized) muteStore = LocalMuteStore(File(dataFolder, "mutes.json"))
+        if (!::freezeStore.isInitialized) freezeStore = LocalFreezeStore(File(dataFolder, "freeze.json"))
         senders = SenderRegistry(this, relayDb)
 
         server.servicesManager.register(
@@ -101,7 +112,7 @@ class CRChatPlugin : JavaPlugin(), Listener, PluginMessageListener, CommandExecu
         server.pluginManager.registerEvents(this, this)
         getCommand("공지")?.setExecutor(this)
 
-        val moderationCommands = ModerationCommands(this, muteService, freezeService, chatRelay)
+        val moderationCommands = ModerationCommands(this, muteStore, freezeStore, chatRelay)
         for (name in listOf("뮤트", "언뮤트", "뮤트목록", "채팅청소", "채팅동결")) {
             getCommand(name)?.setExecutor(moderationCommands)
         }
@@ -111,9 +122,8 @@ class CRChatPlugin : JavaPlugin(), Listener, PluginMessageListener, CommandExecu
 
     /**
      * `network.enabled` 가 꺼져 있거나 MySQL 접속 자체가 안 되면 조용히 로컬 전달만
-     * 쓰는 모드로 남는다 — DB 하나 때문에 서버 전체가 못 뜨면 안 된다. 뮤트·채팅 동결도
-     * 같은 MySQL 을 쓰므로 이때 같이 못 켜진다 — [ModerationCommands] 가 그 경우
-     * 안내 문구를 보여준다.
+     * 쓰는 모드로 남는다 — DB 하나 때문에 서버 전체가 못 뜨면 안 된다. [muteStore]·
+     * [freezeStore] 는 여기서 안 채워지면 [onEnable] 이 로컬 파일로 대체한다.
      */
     private fun setUpNetwork() {
         if (!networkConfig.networkEnabled) return
@@ -125,16 +135,14 @@ class CRChatPlugin : JavaPlugin(), Listener, PluginMessageListener, CommandExecu
             db.ensureSchema()
             relayDb = db
             chatRelay = ChatRelay(this, db, networkConfig, ::onRelayedMessage).also { it.start() }
-            muteService = MuteService(db).also { it.ensureSchema() }
-            freezeService = FreezeService(db).also { it.ensureSchema() }
+            muteStore = MuteService(db).also { it.ensureSchema() }
+            freezeStore = FreezeService(db).also { it.ensureSchema() }
             logger.info("크로스서버 채팅 연동 활성화 (MySQL)")
         } catch (e: Exception) {
             logger.warning("크로스서버 채팅 연동 초기화 실패 — 로컬 전달만 사용합니다: ${e.message}")
             relayDb?.close()
             relayDb = null
             chatRelay = null
-            muteService = null
-            freezeService = null
         }
     }
 
@@ -259,14 +267,14 @@ class CRChatPlugin : JavaPlugin(), Listener, PluginMessageListener, CommandExecu
             return
         }
 
-        val freeze = freezeService?.state()
-        if (freeze?.frozen == true && !player.hasPermission("crchat.admin.freeze.bypass")) {
+        val freeze = freezeStore.state()
+        if (freeze.frozen && !player.hasPermission("crchat.admin.freeze.bypass")) {
             sendSystemMessage(player, "채팅이 잠시 동결되었습니다" + (freeze.reason?.let { " · 사유: $it" } ?: ""))
             sendError(player, "frozen")
             return
         }
 
-        val mute = muteService?.activeMute(player.uniqueId, channel.id)
+        val mute = muteStore.activeMute(player.uniqueId, channel.id)
         if (mute != null) {
             val remain = mute.until?.let { formatRemaining(it) } ?: "영구"
             val muteScope = mute.channel?.let { "[$it] " } ?: ""

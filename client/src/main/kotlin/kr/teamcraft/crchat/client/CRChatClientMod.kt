@@ -5,6 +5,7 @@ import kr.teamcraft.crchat.client.network.CRChatNetworking
 import kr.teamcraft.crchat.client.state.ChatState
 import kr.teamcraft.crchat.client.ui.ChatOverlayRenderer
 import kr.teamcraft.crchat.client.ui.CRChatScreen
+import kr.teamcraft.crchat.client.ui.NoticeBannerRenderer
 import kr.teamcraft.crchat.client.win.ImeDetacher
 import kr.teamcraft.crchat.protocol.PROTOCOL_VERSION
 import net.fabricmc.api.ClientModInitializer
@@ -51,7 +52,10 @@ class CRChatClientMod : ClientModInitializer {
         // 아직 없을 수 있다(다른 곳에서도 이미 이런 이유로 CLIENT_STARTED 를 쓴다).
         ClientLifecycleEvents.CLIENT_STARTED.register { ImeDetacher.detachIfWindows() }
 
-        HudRenderCallback.EVENT.register { context, _ -> ChatOverlayRenderer.render(context) }
+        HudRenderCallback.EVENT.register { context, _ ->
+            ChatOverlayRenderer.render(context)
+            NoticeBannerRenderer.render(context)
+        }
 
         ScreenEvents.AFTER_INIT.register { client, screen, _, _ ->
             if (screen is ChatScreen) {

@@ -1,6 +1,7 @@
 package kr.teamcraft.crchat.client.network
 
 import kr.teamcraft.crchat.client.state.ChatState
+import kr.teamcraft.crchat.client.state.NoticeBannerState
 import kr.teamcraft.crchat.protocol.C2S
 import kr.teamcraft.crchat.protocol.CHANNEL_ID
 import kr.teamcraft.crchat.protocol.PROTOCOL_VERSION
@@ -58,7 +59,14 @@ object CRChatNetworking {
 
             is S2C.SenderDefs -> ChatState.addSenders(packet.senders)
 
-            is S2C.Messages -> for (message in packet.messages) ChatState.addMessage(message)
+            is S2C.Messages -> for (message in packet.messages) {
+                ChatState.addMessage(message)
+                // 공지는 채팅 로그(공지 탭)와 별개로, 화면 가로로 흐르는 배너도 같이 띄운다.
+                if (message.channel == "notice") {
+                    val plain = message.segments.filterIsInstance<Segment.Text>().joinToString("") { it.value }
+                    NoticeBannerState.show(plain)
+                }
+            }
 
             is S2C.Error -> logger.info("서버 거부: {}", packet.reasonKey)
 

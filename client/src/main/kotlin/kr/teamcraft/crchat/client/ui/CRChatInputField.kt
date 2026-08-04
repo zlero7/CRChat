@@ -1,5 +1,6 @@
 package kr.teamcraft.crchat.client.ui
 
+import kr.teamcraft.crchat.client.state.ChatOverlayState
 import kr.teamcraft.crchat.common.hangul.Dubeolsik
 import kr.teamcraft.crchat.common.hangul.HangulComposer
 import net.minecraft.client.MinecraftClient
@@ -57,8 +58,15 @@ class CRChatInputField(
     /** 선택 시작점. [cursor] 와 같으면 선택 없음. Shift 없이 커서를 옮기면 여기도 같이 따라간다. */
     private var selectionAnchor = 0
 
-    /** 한/영 전환 상태. 기본은 한글 모드. */
-    private var hangulMode = true
+    /**
+     * 한/영 전환 상태. [ChatOverlayState] 에 위임한다 — 이 클래스는 채팅창을 열 때마다
+     * 새로 만들어지는 인스턴스라, 여기 그냥 필드로 두면 닫았다 열 때마다 항상 한글로
+     * 리셋됐다(실제로 이 문제가 있었다). [ChatOverlayState.activeTab] 과 같은 이유로
+     * 화면 생명주기보다 오래 살아야 하는 상태다.
+     */
+    private var hangulMode: Boolean
+        get() = ChatOverlayState.hangulMode
+        set(value) { ChatOverlayState.hangulMode = value }
 
     /** keyPressed 에서 자모로 이미 처리한 키가 곧이어 들어올 charTyped 를 오염시키지 않게 막는 플래그. */
     private var suppressNextChar = false

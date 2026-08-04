@@ -29,6 +29,13 @@ object ChatOverlayState {
     /** 메인 패널에서 지금 보고 있는 탭. 화면을 닫았다 열어도 유지된다 — [kr.teamcraft.crchat.client.ui.CRChatScreen] 은 이 값을 직접 읽고 쓴다. */
     var activeTab: Tab = Tab.ALL
 
+    /**
+     * 한/영 전환 상태. [kr.teamcraft.crchat.client.ui.CRChatInputField] 는 화면을 열 때마다
+     * 새로 만들어지는 인스턴스라 — 그 안의 필드였을 땐 채팅을 닫았다 열 때마다 항상
+     * 한글로 리셋됐다(실제로 이 문제가 있었다). [activeTab] 과 같은 이유로 여기 둔다.
+     */
+    var hangulMode: Boolean = true
+
     private var positioned = false
 
     /**

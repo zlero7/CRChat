@@ -62,20 +62,31 @@ class LocalMuteStore(private val file: File) : MuteStore {
             ?.toMuteRecord()
     }
 
+    /**
+     * 새로 걸기 전에 기존 활성 뮤트를 전부 해제한다 — **덮어쓰기**. [MuteService.mute]
+     * 와 같은 이유(채널이 달라도 두 개가 동시에 활성으로 남는 걸 막는다)다. 여기선
+     * 한 번의 load/save 로 처리한다 — [unmute] 를 따로 부르면 파일을 두 번 쓰게 된다.
+     */
     override fun mute(uuid: UUID, channel: String?, untilEpochMillis: Long?, reason: String?, issuedBy: String) =
         lock.withLock {
             val data = load()
-            val record = StoredMute(
+            val now = System.currentTimeMillis()
+            val revoked = data.records.map { record ->
+                val isActive = record.uuid == uuid.toString() && record.revokedAt == null &&
+                    (record.until == null || record.until > now)
+                if (isActive) record.copy(revokedAt = now) else record
+            }
+            val newRecord = StoredMute(
                 id = data.nextId,
                 uuid = uuid.toString(),
                 channel = channel,
                 until = untilEpochMillis,
                 reason = reason,
                 issuedBy = issuedBy,
-                createdAt = System.currentTimeMillis(),
+                createdAt = now,
                 revokedAt = null,
             )
-            save(data.copy(nextId = data.nextId + 1, records = data.records + record))
+            save(data.copy(nextId = data.nextId + 1, records = revoked + newRecord))
         }
 
     override fun unmute(uuid: UUID, channel: String?): Int = lock.withLock {

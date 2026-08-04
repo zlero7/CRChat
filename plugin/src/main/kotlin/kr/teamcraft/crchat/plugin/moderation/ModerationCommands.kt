@@ -12,6 +12,7 @@ import org.bukkit.Bukkit
 import org.bukkit.command.Command
 import org.bukkit.command.CommandExecutor
 import org.bukkit.command.CommandSender
+import org.bukkit.command.TabCompleter
 import org.bukkit.plugin.java.JavaPlugin
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -33,13 +34,19 @@ class ModerationCommands(
     private val muteStore: MuteStore,
     private val freezeStore: FreezeStore,
     private val chatRelay: ChatRelay?,
-) : CommandExecutor {
+) : CommandExecutor, TabCompleter {
 
     private val dateFormat = SimpleDateFormat("MM-dd HH:mm")
 
     /** 뮤트·동결이 이 서버에만 적용되는지(MySQL 없음) 확인해 명령어 결과에 덧붙인다. */
     private val scopeNote: String =
         if (muteStore is MuteService) "" else " §7(이 서버에만 적용 — 크로스서버 연동 꺼짐)"
+
+    /** NOTICE·SYSTEM 은 수신 전용이라 애초에 뮤트 대상이 아니다 — [handleMute] 의 채널 검증과 맞춘다. */
+    private val muteableChannels = listOf(Channel.GLOBAL, Channel.GENERAL, Channel.GUILD, Channel.PARTY).map { it.id }
+    private val durationExamples = listOf("10m", "1h", "3d", "perm")
+    private val muteReasonExamples = listOf("도배", "욕설", "광고", "부적절한언어")
+    private val freezeReasonExamples = listOf("도배공격", "긴급점검", "욕설민원폭주")
 
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
         when (command.name) {
@@ -52,6 +59,34 @@ class ModerationCommands(
         }
         return true
     }
+
+    /**
+     * 닉네임은 온라인 플레이어로, 기간·채널·사유는 예시 값으로 제안한다 — 특히 기간
+     * (`10m`/`1h`/`3d`/`perm`)과 사유는 어차피 자유 입력이라 "정답"은 없지만, 예시가
+     * 안 뜨면 관리자가 매번 형식을 기억해야 해서 실수하기 쉽다.
+     */
+    override fun onTabComplete(sender: CommandSender, command: Command, alias: String, args: Array<out String>): List<String> {
+        val current = args.lastOrNull().orEmpty()
+        val candidates = when (command.name) {
+            "뮤트" -> when (args.size) {
+                1 -> onlinePlayerNames()
+                2 -> durationExamples
+                3 -> muteableChannels
+                else -> muteReasonExamples
+            }
+            "언뮤트" -> when (args.size) {
+                1 -> onlinePlayerNames()
+                2 -> muteableChannels
+                else -> emptyList()
+            }
+            "뮤트목록" -> if (args.size == 1) onlinePlayerNames() else emptyList()
+            "채팅동결" -> if (args.size == 1) freezeReasonExamples else emptyList()
+            else -> emptyList()
+        }
+        return candidates.filter { it.startsWith(current, ignoreCase = true) }
+    }
+
+    private fun onlinePlayerNames(): List<String> = Bukkit.getOnlinePlayers().map { it.name }
 
     /** 접속 기록이 있어야(또는 지금 온라인이어야) 유효한 대상으로 본다 — 오타로 아무 이름이나 뮤트되는 사고 방지. */
     @Suppress("DEPRECATION")

@@ -115,6 +115,7 @@ class CRChatPlugin : JavaPlugin(), Listener, PluginMessageListener, CommandExecu
         val moderationCommands = ModerationCommands(this, muteStore, freezeStore, chatRelay)
         for (name in listOf("뮤트", "언뮤트", "뮤트목록", "채팅청소", "채팅동결")) {
             getCommand(name)?.setExecutor(moderationCommands)
+            getCommand(name)?.tabCompleter = moderationCommands
         }
 
         logger.info("CRChat 활성화 (protocol v$PROTOCOL_VERSION, server-id=${networkConfig.serverId})")

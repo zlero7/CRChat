@@ -94,7 +94,15 @@ class MuteService(private val db: ChatRelayDatabase) : MuteStore {
             }
         }
 
+    /**
+     * 새로 걸기 전에 기존 활성 뮤트를 전부 해제한다 — **덮어쓰기**. 채널이 다르더라도
+     * 전부 해제한다: 전체 뮤트가 걸린 사람을 채널별로 다시 뮤트하면(또는 그 반대)
+     * 두 개가 동시에 활성 상태로 남아 [activeMute] 가 어느 쪽을 보여줄지 헷갈리고,
+     * `/뮤트목록`에도 "활성"이 두 개 찍혀 관리자가 헷갈린다. 재실행은 항상 "지금부터는
+     * 이 조건으로"라는 뜻으로 받아들인다.
+     */
     override fun mute(uuid: UUID, channel: String?, untilEpochMillis: Long?, reason: String?, issuedBy: String) {
+        unmute(uuid, null)
         db.dataSource.connection.use { conn ->
             conn.prepareStatement(
                 "INSERT INTO crchat_mute (uuid, channel, until, reason, issued_by) VALUES (?, ?, ?, ?, ?)",

@@ -154,7 +154,11 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
                 context.fill(x - 2, rowY + 1, x + width + 2, rowY + tabBarHeight - 1, 0xE6FFC400.toInt())
             }
 
+            // 안 읽음(노란 배경) 위에서는 항상 흰색으로 — 회색 글자는 밝은 배경 위에서
+            // 잘 안 보였다(실제로 이 문제가 있었다). activeTab 은 애초에 안 읽음으로
+            // 안 잡히니(markUnread 가 건너뜀) 둘이 겹칠 일은 없다.
             val color = when {
+                tab in ChatOverlayState.unreadTabs -> 0xFFFFFF
                 tab == ChatOverlayState.activeTab -> 0xFFFFFF
                 hovered -> 0xAAAAAA
                 else -> 0x808080
@@ -264,7 +268,8 @@ class CRChatScreen(private val initialText: String = "") : Screen(Text.literal("
                 // 설정 줄 — 배경색 버튼이 아니면 패널 이동으로 취급한다.
                 val (labelX, labelWidth) = backgroundButtonBounds(main)
                 if (mouseX >= labelX && mouseX <= labelX + labelWidth) {
-                    backgroundPicker.toggle(labelX + labelWidth, tabRowY + tabBarHeight + 4, width, height)
+                    // 채팅 패널 바로 옆(오른쪽), 패널과 같은 높이(같은 y)에서 연다.
+                    backgroundPicker.toggle(main.x + main.width + 8, main.y, width, height)
                     return true
                 }
                 startDrag(main, DragMode.MOVE, mouseX, mouseY)

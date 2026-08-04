@@ -28,7 +28,8 @@ class ChatBackgroundPicker {
     private val svStep = 2
 
     /** [svY]·[hueY] 등이 전부 `y + 고정값` 형태라, y 와 무관한 콘텐츠 총 높이를 미리 계산해 둔다. */
-    private val contentHeight = 14 + 100 /* svSize */ + 6 /* gap */ + 8 /* hueBarHeight */ + 6 /* gap */ + 12 + 10
+    private val contentHeight = 14 + 100 /* svSize */ + 6 /* gap */ + 8 /* hueBarHeight */ + 6 /* gap */ + 12 + 8
+    private val bottomPad = 3
 
     private var draggingSv = false
     private var draggingHue = false
@@ -36,20 +37,22 @@ class ChatBackgroundPicker {
     private val svY get() = y + 14
     private val hueY get() = svY + svSize + gap
     private val toggleY get() = hueY + hueBarHeight + gap + 12
-    private val bottom get() = toggleY + 10
+    /** "커스텀 배경 ..." 줄 바로 아래에서 끊는다 — 전엔 밑에 빈 여백이 남아 있었다(실제로 이 문제가 있었다). */
+    private val bottom get() = toggleY + 8
 
     /**
-     * [rightEdgeX] 에 팝업 오른쪽 끝을 맞춰서 연다 — 설정 버튼 바로 아래 붙어 보이게
-     * 하려는 것이다(전에는 패널 왼쪽 끝에 고정돼서 버튼이랑 동떨어져 보였다 — 실제로
-     * 이 문제가 있었다). 화면 밖으로 안 나가게 [screenWidth]·[screenHeight] 안으로 자른다.
+     * [leftX] 에 팝업 왼쪽 끝을, [topY] 에 위쪽 끝을 맞춰서 연다 — 채팅 패널 바로 옆에
+     * 패널과 같은 높이로 나란히 보이게 하려는 것이다(전엔 설정 버튼 아래로 펼쳐져서
+     * 채팅 내용을 가렸다 — 실제로 이 문제가 있었다). 화면 밖으로 안 나가게
+     * [screenWidth]·[screenHeight] 안으로 자른다.
      */
-    fun toggle(rightEdgeX: Int, topY: Int, screenWidth: Int, screenHeight: Int) {
+    fun toggle(leftX: Int, topY: Int, screenWidth: Int, screenHeight: Int) {
         if (open) {
             close()
             return
         }
         open = true
-        x = (rightEdgeX - width).coerceIn(4, (screenWidth - width - 4).coerceAtLeast(4))
+        x = leftX.coerceIn(4, (screenWidth - width - 4).coerceAtLeast(4))
         y = topY.coerceIn(4, (screenHeight - contentHeight - 4).coerceAtLeast(4))
     }
 
@@ -62,11 +65,11 @@ class ChatBackgroundPicker {
     fun render(context: DrawContext, textRenderer: TextRenderer) {
         if (!open) return
 
-        context.fill(x - 6, y - 6, x + width + 6, y + bottom + 6, 0xF0101018.toInt())
+        context.fill(x - 6, y - 6, x + width + 6, y + bottom + bottomPad, 0xF0101018.toInt())
         context.fill(x - 6, y - 6, x + width + 6, y - 5, 0x77FFFFFF.toInt())
-        context.fill(x - 6, y + bottom + 5, x + width + 6, y + bottom + 6, 0x77FFFFFF.toInt())
-        context.fill(x - 6, y - 6, x - 5, y + bottom + 6, 0x77FFFFFF.toInt())
-        context.fill(x + width + 5, y - 6, x + width + 6, y + bottom + 6, 0x77FFFFFF.toInt())
+        context.fill(x - 6, y + bottom + bottomPad - 1, x + width + 6, y + bottom + bottomPad, 0x77FFFFFF.toInt())
+        context.fill(x - 6, y - 6, x - 5, y + bottom + bottomPad, 0x77FFFFFF.toInt())
+        context.fill(x + width + 5, y - 6, x + width + 6, y + bottom + bottomPad, 0x77FFFFFF.toInt())
 
         TextRenderUtil.drawScaled(context, textRenderer, Text.literal("배경색"), x, y, 0xFFFFFF)
 
@@ -113,7 +116,7 @@ class ChatBackgroundPicker {
     fun mouseClicked(mouseX: Double, mouseY: Double): Boolean {
         if (!open) return false
 
-        if (mouseX < x - 6 || mouseX > x + width + 6 || mouseY < y - 6 || mouseY > y + bottom + 6) {
+        if (mouseX < x - 6 || mouseX > x + width + 6 || mouseY < y - 6 || mouseY > y + bottom + bottomPad) {
             close()
             return true // 팝업 밖 클릭 — 닫기만 하고, 뒤 UI 클릭으로는 안 넘긴다.
         }

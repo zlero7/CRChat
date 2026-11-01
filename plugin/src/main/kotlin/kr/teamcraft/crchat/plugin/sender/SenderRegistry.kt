@@ -2,6 +2,7 @@ package kr.teamcraft.crchat.plugin.sender
 
 import kr.teamcraft.crchat.plugin.network.ChatRelayDatabase
 import kr.teamcraft.crchat.protocol.SenderDef
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
 import org.bukkit.plugin.java.JavaPlugin
@@ -71,8 +72,18 @@ class SenderRegistry(
         id = idFor(player),
         uuid = player.uniqueId.toString(),
         name = player.name,
-        displayName = player.name,
+        displayName = plainDisplayName(player),
     )
+
+    /**
+     * 다른 플러그인이 `setDisplayName`/`displayName(...)` 으로 지정한 닉네임을 색상 코드를
+     * 뗀 순수 텍스트로 가져온다. 비어 있으면 기본 닉네임으로 대체.
+     */
+    private fun plainDisplayName(player: Player): String {
+        val plain = PlainTextComponentSerializer.plainText().serialize(player.displayName())
+        val stripped = plain.replace(Regex("[§&][0-9a-fk-orA-FK-OR]"), "").trim()
+        return stripped.ifEmpty { player.name }
+    }
 
     fun remove(player: Player) {
         ids.remove(player.uniqueId)

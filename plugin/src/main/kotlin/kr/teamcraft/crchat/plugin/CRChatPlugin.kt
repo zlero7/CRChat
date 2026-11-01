@@ -110,6 +110,7 @@ class CRChatPlugin : JavaPlugin(), Listener, PluginMessageListener, CommandExecu
         server.messenger.registerOutgoingPluginChannel(this, CHANNEL_ID)
         server.messenger.registerIncomingPluginChannel(this, CHANNEL_ID, this)
         server.pluginManager.registerEvents(this, this)
+        server.pluginManager.registerEvents(kr.teamcraft.crchat.plugin.sender.DisplayNameMessages(), this)
         getCommand("공지")?.setExecutor(this)
 
         val moderationCommands = ModerationCommands(this, muteStore, freezeStore, chatRelay)
